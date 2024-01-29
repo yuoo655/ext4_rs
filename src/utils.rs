@@ -146,3 +146,20 @@ pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u3
     false
 }
 
+
+pub fn ext4_path_skip<'a>(path:&'a str, skip: &str) -> &'a str{
+    let path = &path.trim_start_matches(skip);
+    path
+}
+
+pub fn ext4_path_check(path:&str, is_goal:&mut bool) -> usize{
+    for (i, c) in path.chars().enumerate() {
+        if c == '/' {
+            *is_goal = false;
+            return i;
+        }
+    }
+    let path = path.to_string();
+    *is_goal = true;
+    return path.len();    
+}

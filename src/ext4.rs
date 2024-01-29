@@ -9,9 +9,9 @@ use core::mem::size_of;
 use core::str;
 use core::*;
 
+use super::ext4_defs::*;
 use crate::consts::*;
 use crate::prelude::*;
-use super::ext4_defs::*;
 use crate::utils::*;
 
 pub(crate) const BASE_OFFSET: usize = 1024;
@@ -72,14 +72,14 @@ impl dyn BlockDevice {
 
 #[derive(Debug)]
 pub struct Ext4 {
-    block_device: Arc<dyn BlockDevice>,
-    super_block: Ext4Superblock,
-    block_groups: Vec<Ext4BlockGroup>,
-    inodes_per_group: u32,
-    blocks_per_group: u32,
-    inode_size: usize,
-    self_ref: Weak<Self>,
-    mount_point: Ext4MountPoint,
+    pub block_device: Arc<dyn BlockDevice>,
+    pub super_block: Ext4Superblock,
+    pub block_groups: Vec<Ext4BlockGroup>,
+    pub inodes_per_group: u32,
+    pub blocks_per_group: u32,
+    pub inode_size: usize,
+    pub self_ref: Weak<Self>,
+    pub mount_point: Ext4MountPoint,
 }
 
 impl Ext4 {
@@ -96,21 +96,17 @@ impl Ext4 {
         let inode_size = super_block.inode_size();
 
         // Load the block groups information
-        let load_block_groups =
-            |fs: Weak<Ext4>, block_device: &dyn BlockDevice| -> Result<Vec<Ext4BlockGroup>> {
-
-                let block_groups_count = super_block.block_groups_count() as usize;
-                let mut block_groups = Vec::with_capacity(block_groups_count);
-                for idx in 0..block_groups_count {
-                    let block_group = Ext4BlockGroup::load(
-                        block_device,
-                        &super_block,
-                        idx,
-                    ).unwrap();
-                    block_groups.push(block_group);
-                }
-                Ok(block_groups)
-            };
+        let load_block_groups = |fs: Weak<Ext4>,
+                                 block_device: Arc<dyn BlockDevice>|
+         -> Result<Vec<Ext4BlockGroup>> {
+            let block_groups_count = super_block.block_groups_count() as usize;
+            let mut block_groups = Vec::with_capacity(block_groups_count);
+            for idx in 0..block_groups_count {
+                let block_group = Ext4BlockGroup::load(block_device.clone(), &super_block, idx).unwrap();
+                block_groups.push(block_group);
+            }
+            Ok(block_groups)
+        };
 
         let mount_point = Ext4MountPoint::new("/");
 
@@ -119,7 +115,7 @@ impl Ext4 {
             inodes_per_group: inodes_per_group,
             blocks_per_group: blocks_per_group,
             inode_size: inode_size as usize,
-            block_groups: load_block_groups(weak_ref.clone(), block_device.as_ref()).unwrap(),
+            block_groups: load_block_groups(weak_ref.clone(), block_device.clone()).unwrap(),
             block_device,
             self_ref: weak_ref.clone(),
             mount_point: mount_point,
@@ -179,8 +175,93 @@ impl Ext4 {
         path: &str,
         iflags: u32,
         ftype: u8,
-        parent_inode: Option<&Ext4Inode>,
+        parent_inode: Option<&mut Ext4InodeRef>,
     ) {
-        let mp = &self.mount_point;
+        let mut is_goal = false;
+
+        let mp: &Ext4MountPoint = &self.mount_point;
+
+        let mp_name = mp.mount_name.as_bytes();
+
+        let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
+        let ext4_blk = Ext4Block {
+            disk_block_id: 0,
+            block_data: &mut data,
+            dirty: true,
+        };
+        let mut de = Ext4DirEntry::default();
+        let mut dir_search_result = Ext4DirSearchResult::new(ext4_blk, de);
+        let path_skip_mount = ext4_path_skip(path, core::str::from_utf8(mp_name).unwrap());
+
+        file.flags = iflags;
+
+        // load root inode
+        let root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
+
+        if !parent_inode.is_none() {
+            parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
+        }
+
+        let mut len = ext4_path_check(path_skip_mount, &mut is_goal);
+
+        let mut serach_path = path_skip_mount;
+
+        loop {
+            len = ext4_path_check(&serach_path, &mut is_goal);
+
+            let r = ext4_dir_find_entry(
+                &root_inode_ref,
+                serach_path,
+                len as u32,
+                &mut dir_search_result,
+            );
+
+            if r != EOK {
+                ext4_dir_destroy_result();
+
+                let mut child_inode_ref = Ext4InodeRef::new(self.self_ref.clone());
+
+                let r = ext4_fs_alloc_inode(&mut child_inode_ref);
+
+                if r != EOK {
+                    break;
+                }
+
+                ext4_fs_inode_blocks_init(&mut child_inode_ref);
+
+                let r = ext4_link();
+
+                if r != EOK {
+                    /*Fail. Free new inode.*/
+                    break;
+                }
+
+                ext4_fs_put_inode_ref(&mut child_inode_ref);
+            }
+        }
     }
+}
+
+pub fn ext4_fs_put_inode_ref(inode_ref: &mut Ext4InodeRef) {
+    inode_ref.inner.write_back_inode();
+}
+
+pub fn ext4_link() -> usize {
+    0
+}
+
+pub fn ext4_fs_inode_blocks_init(inode_ref: &mut Ext4InodeRef) {}
+
+pub fn ext4_fs_alloc_inode(child_inode_ref: &mut Ext4InodeRef) -> usize {
+    0
+}
+pub fn ext4_dir_destroy_result() {}
+
+pub fn ext4_dir_find_entry(
+    parent: &Ext4InodeRef,
+    name: &str,
+    name_len: u32,
+    result: &mut Ext4DirSearchResult,
+) -> usize {
+    0
 }

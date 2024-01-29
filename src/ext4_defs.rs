@@ -1,5 +1,6 @@
 use bitflags::bitflags;
 use core::mem::size_of;
+use std::fs;
 
 use super::*;
 use crate::prelude::*;
@@ -324,7 +325,7 @@ impl Ext4Inode {
     pub fn get_inode_disk_pos(
         &self,
         super_block: &Ext4Superblock,
-        block_device: &dyn BlockDevice,
+        block_device: Arc<dyn BlockDevice>,
         inode_id: u32,
     ) -> usize {
         let inodes_per_group = super_block.inodes_per_group;
@@ -343,11 +344,11 @@ impl Ext4Inode {
 
     pub fn sync_inode_to_disk(
         &self,
-        block_device: &dyn BlockDevice,
+        block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
         inode_id: u32,
     ) -> Result<()> {
-        let disk_pos = self.get_inode_disk_pos(super_block, block_device, inode_id);
+        let disk_pos = self.get_inode_disk_pos(super_block, block_device.clone(), inode_id);
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
         };
@@ -406,7 +407,7 @@ impl Ext4Inode {
 
     pub fn sync_inode_to_disk_with_csum(
         &mut self,
-        block_device: &dyn BlockDevice,
+        block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
         inode_id: u32,
     ) -> Result<()> {
@@ -453,6 +454,10 @@ impl TryFrom<&[u8]> for Ext4BlockGroup {
 }
 
 impl Ext4BlockGroup {
+    pub fn get_inode_table_blk_num(&self) -> u32 {
+        ((self.inode_table_first_block_hi as u64) << 32) as u32 | self.inode_table_first_block_lo
+    }
+
     pub fn sync_block_group_to_disk(
         &self,
         block_device: &dyn BlockDevice,
@@ -527,7 +532,7 @@ impl Ext4BlockGroup {
 
 impl Ext4BlockGroup {
     pub fn load(
-        block_device: &dyn BlockDevice,
+        block_device: Arc<dyn BlockDevice>,
         super_block: &Ext4Superblock,
         block_group_idx: usize,
         // fs: Weak<Ext4>,
@@ -731,27 +736,84 @@ pub struct Ext4ExtentPath {
     pub extent: *const Ext4Extent,
 }
 
-pub struct Inode {
-    ino: u32,
-    block_group_idx: usize,
-    inner: Inner,
-    fs: Weak<Ext4>,
+pub struct Ext4InodeRef {
+    pub inode_num: u32,
+    pub inner: Inner,
+    pub fs: Weak<Ext4>,
 }
 
-impl Inode {
+impl Ext4InodeRef {
+    pub fn new(fs: Weak<Ext4>) -> Self{
+
+        let inner = Inner {
+            inode: Ext4Inode::default(),
+            weak_self: Weak::new(),
+        };
+
+        let inode = Self {
+            inode_num: 0,
+            inner,
+            fs,
+        };
+
+        inode
+    }
+
     pub fn fs(&self) -> Arc<Ext4> {
         self.fs.upgrade().unwrap()
     }
+
+    pub fn get_inode_ref(fs: Weak<Ext4>, inode_num: u32) -> Self {
+
+        let fs_clone = fs.clone();
+
+        let fs = fs.upgrade().unwrap();
+        let super_block = fs.super_block;
+
+        let inodes_per_group = super_block.inodes_per_group;
+        let inode_size = super_block.inode_size as u64;
+        let group = (inode_num - 1) / inodes_per_group;
+        let index = (inode_num - 1) % inodes_per_group;
+        let group = fs.block_groups[group as usize];
+        let inode_table_blk_num = group.get_inode_table_blk_num();
+        let offset = inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize;
+
+        let mut data = fs.block_device.read_offset(offset);
+        let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
+        let inode = Ext4Inode::try_from(inode_data).unwrap();
+        
+        let inner = Inner {
+            inode,
+            weak_self: Weak::new(),
+        };
+        let inode = Self {
+            inode_num,
+            inner,
+            fs:fs_clone,
+        };
+
+        inode
+
+    }
 }
 
-struct Inner {
-    inode: Ext4Inode,
-    weak_self: Weak<Inode>,
+pub struct Inner {
+    pub inode: Ext4Inode,
+    pub weak_self: Weak<Ext4InodeRef>,
 }
 
 impl Inner {
-    pub fn inode(&self) -> Arc<Inode> {
+    pub fn inode(&self) -> Arc<Ext4InodeRef> {
         self.weak_self.upgrade().unwrap()
+    }
+
+    pub fn write_back_inode(&mut self) {
+        let weak_inode_ref = self.weak_self.clone().upgrade().unwrap();
+        let fs = weak_inode_ref.fs();
+        let block_device = fs.block_device.clone();
+        let super_block = fs.super_block.clone();
+        let inode_id = weak_inode_ref.inode_num;
+        self.inode.sync_inode_to_disk_with_csum(block_device, &super_block, inode_id).unwrap()
     }
 }
 
@@ -807,7 +869,7 @@ impl Default for Ext4DirEnInternal {
 
 #[repr(C)]
 #[derive(Debug, Default)]
-struct Ext4DirEntry {
+pub struct Ext4DirEntry {
     pub inode: u32,               // 该目录项指向的inode的编号
     pub entry_len: u16,           // 到下一个目录项的距离
     pub name_len: u8,             // 低8位的文件名长度
