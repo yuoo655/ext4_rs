@@ -1,15 +1,18 @@
-pub mod defs;
+#![feature(error_in_core)]
+
+pub mod consts;
+pub mod ext4_error;
 pub mod ext4;
 pub mod prelude;
-pub mod consts;
+pub mod ext4_defs;
 pub mod utils;
 
-pub use defs::*;
+pub use consts::*;
+pub use ext4_error::*;
 pub use ext4::*;
 pub use prelude::*;
-pub use consts::*;
+pub use ext4_defs::*;
 pub use utils::*;
-
 
 extern crate alloc;
 
@@ -17,11 +20,7 @@ extern crate alloc;
 mod tests {
     mod write_test {
 
-        #[test]        
-        fn test_write() {
-            
-
-        }
+        #[test]
+        fn test_write() {}
     }
-
 }

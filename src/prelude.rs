@@ -1,4 +1,5 @@
 #![allow(unused)]
+#![feature(error_in_core)]
 
 extern crate alloc;
 
@@ -21,5 +22,5 @@ pub(crate) use core::fmt::Debug;
 
 pub(crate) use log::{debug, info, trace, warn};
 
-pub(crate) use crate::error::{Errno, Error};
-pub(crate) type Result<T> = core::result::Result<T, Error>;
+pub(crate) use crate::ext4_error::*;
+pub(crate) type Result<T> = core::result::Result<T, Ext4Error>;

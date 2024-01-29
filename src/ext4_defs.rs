@@ -1,6 +1,5 @@
 use bitflags::bitflags;
 use core::mem::size_of;
-use std::fmt::Error;
 
 use super::*;
 use crate::prelude::*;
@@ -13,7 +12,7 @@ pub enum SeekFrom {
 }
 
 /// 文件描述符
-pub struct Ext4FileNew {
+pub struct Ext4File {
     /// 挂载点句柄
     pub mp: *mut Ext4MountPoint,
     /// 文件 inode id
@@ -26,7 +25,7 @@ pub struct Ext4FileNew {
     pub fpos: u64,
 }
 
-impl Ext4FileNew {
+impl Ext4File {
     pub fn new() -> Self {
         Self {
             mp: core::ptr::null_mut(),
@@ -143,9 +142,10 @@ pub struct Ext4Superblock {
 
 impl TryFrom<Vec<u8>> for Ext4Superblock {
     type Error = u64;
-    fn try_from(value: Vec<u8>) -> Result<Self> {
+    fn try_from(value: Vec<u8>) -> core::result::Result<Self, u64> {
         let data = &value[..size_of::<Ext4Superblock>()];
-        unsafe { core::ptr::read(data.as_ptr() as *const _) }
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+        
     }
 }
 
@@ -181,7 +181,7 @@ impl Ext4Superblock {
 
     /// Returns the number of block groups.
     pub fn block_groups_count(&self) -> u32 {
-        (self.blocks_count_hi.to_le() as u32) << 32 | self.blocks_count_lo
+        ((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo / self.blocks_per_group
     }
 
     pub fn desc_size(&self) -> u16 {
@@ -240,13 +240,62 @@ pub struct Linux2 {
 
 impl TryFrom<&[u8]> for Ext4Inode {
     type Error = u64;
-    fn try_from(data: &[u8]) -> Result<Self> {
+    fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
         let data = &data[..size_of::<Ext4Inode>()];
-        unsafe { core::ptr::read(data.as_ptr() as *const _) }
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+        
     }
 }
 
 impl Ext4Inode {
+    pub fn ext4_inode_set_flags(&mut self, f: u32) {
+        self.flags |= f;
+    }
+
+    pub fn ext4_inode_set_mode(&mut self, mode: u16) {
+        self.mode |= mode;
+    }
+
+    pub fn ext4_inode_set_links_cnt(&mut self, cnt: u16) {
+        self.links_count = cnt;
+    }
+
+    pub fn ext4_inode_set_uid(&mut self, uid: u16) {
+        self.uid = uid;
+    }
+
+    pub fn ext4_inode_set_gid(&mut self, gid: u16) {
+        self.gid = gid;
+    }
+
+    pub fn ext4_inode_set_size(&mut self, size: u32) {
+        self.size = size;
+    }
+
+    pub fn ext4_inode_set_access_time(&mut self, access_time: u32) {
+        self.atime = access_time;
+    }
+
+    pub fn ext4_inode_set_change_inode_time(&mut self, change_inode_time: u32) {
+        self.ctime = change_inode_time;
+    }
+
+    pub fn ext4_inode_set_modif_time(&mut self, modif_time: u32) {
+        self.mtime = modif_time;
+    }
+
+    pub fn ext4_inode_set_del_time(&mut self, del_time: u32) {
+        self.dtime = del_time;
+    }
+
+    pub fn ext4_inode_set_blocks_count(&mut self, blocks_count: u32) {
+        self.blocks = blocks_count;
+    }
+
+    pub fn ext4_inode_set_generation(&mut self, generation: u32) {
+        self.generation = generation;
+    }
+
     fn get_checksum(&self, super_block: &Ext4Superblock) -> u32 {
         let inode_size = super_block.inode_size;
         let mut v: u32 = self.osd2.l_i_checksum_lo as u32;
@@ -254,6 +303,20 @@ impl Ext4Inode {
             v |= (self.i_checksum_hi as u32) << 16;
         }
         v
+    }
+
+    pub fn set_inode_checksum_value(
+        &mut self,
+        super_block: &Ext4Superblock,
+        inode_id: u32,
+        checksum: u32,
+    ) {
+        let inode_size = super_block.inode_size();
+
+        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        if inode_size > 128 {
+            self.i_checksum_hi = (checksum >> 16) as u16;
+        }
     }
 }
 
@@ -269,9 +332,12 @@ impl Ext4Inode {
         let group = (inode_id - 1) / inodes_per_group;
         let index = (inode_id - 1) % inodes_per_group;
 
+        let bg = Ext4BlockGroup::load(block_device, super_block, group as usize).unwrap();
+
         let mut inode_table_blk_num =
-            Ext4BlockGroup::load(block_device, super_block, group as usize).unwrap();
-        let mut offset = inode_table_blk_num * BLOCK_SIZE + index * inode_size as u32;
+            ((bg.inode_table_first_block_hi as u64) << 32) | bg.inode_table_first_block_lo as u64;
+        let mut offset =
+            inode_table_blk_num as usize * BLOCK_SIZE + (index * inode_size as u32) as usize;
         offset
     }
 
@@ -328,21 +394,6 @@ impl Ext4Inode {
         checksum
     }
 
-    pub fn set_inode_checksum_value(
-        &mut self,
-        super_block: &Ext4Superblock,
-        inode_id: u32,
-        checksum: u32,
-    ) {
-        let inode_size = super_block.inode_size();
-        // let csum = self.get_inode_checksum(inode_id, super_block);
-
-        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
-        if inode_size > 128 {
-            self.i_checksum_hi = (checksum >> 16) as u16;
-        }
-    }
-
     pub fn set_inode_checksum(&mut self, super_block: &Ext4Superblock, inode_id: u32) {
         let inode_size = super_block.inode_size();
         let checksum = self.get_inode_checksum(inode_id, super_block);
@@ -395,9 +446,9 @@ pub struct Ext4BlockGroup {
 
 impl TryFrom<&[u8]> for Ext4BlockGroup {
     type Error = u64;
-    fn try_from(data: &[u8]) -> Result<Self> {
+    fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
         let data = &data[..size_of::<Ext4BlockGroup>()];
-        unsafe { core::ptr::read(data.as_ptr() as *const _) }
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }
 
@@ -480,7 +531,7 @@ impl Ext4BlockGroup {
         super_block: &Ext4Superblock,
         block_group_idx: usize,
         // fs: Weak<Ext4>,
-    ) -> Result<Self> {
+    ) -> core::result::Result<Self, u64> {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
         let dsc_per_block = dsc_cnt;
         let dsc_id = block_group_idx / dsc_cnt;
@@ -496,9 +547,190 @@ impl Ext4BlockGroup {
             &data[offset as usize..offset as usize + size_of::<Ext4BlockGroup>()];
 
         let bg = Ext4BlockGroup::try_from(block_group_data);
+
         bg
     }
 }
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct Ext4ExtentHeader {
+    /// Magic number, 0xF30A.
+    pub magic: u16,
+
+    /// Number of valid entries following the header.
+    pub entries_count: u16,
+
+    /// Maximum number of entries that could follow the header.
+    pub max_entries_count: u16,
+
+    /// Depth of this extent node in the extent tree.
+    /// 0 = this extent node points to data blocks;
+    /// otherwise, this extent node points to other extent nodes.
+    /// The extent tree can be at most 5 levels deep:
+    /// a logical block number can be at most 2^32,
+    /// and the smallest n that satisfies 4*(((blocksize - 12)/12)^n) >= 2^32 is 5.
+    pub depth: u16,
+
+    /// Generation of the tree. (Used by Lustre, but not standard ext4).
+    pub generation: u32,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct Ext4ExtentIndex {
+    /// This index node covers file blocks from ‘block’ onward.
+    pub first_block: u32,
+
+    /// Lower 32-bits of the block number of the extent node that is
+    /// the next level lower in the tree. The tree node pointed to
+    /// can be either another internal node or a leaf node, described below.
+    pub leaf_lo: u32,
+
+    /// Upper 16-bits of the previous field.
+    pub leaf_hi: u16,
+
+    pub padding: u16,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct Ext4Extent {
+    /// First file block number that this extent covers.
+    pub first_block: u32,
+
+    /// Number of blocks covered by extent.
+    /// If the value of this field is <= 32768, the extent is initialized.
+    /// If the value of the field is > 32768, the extent is uninitialized
+    /// and the actual extent length is ee_len - 32768.
+    /// Therefore, the maximum length of a initialized extent is 32768 blocks,
+    /// and the maximum length of an uninitialized extent is 32767.
+    pub block_count: u16,
+
+    /// Upper 16-bits of the block number to which this extent points.
+    pub start_hi: u16,
+
+    /// Lower 32-bits of the block number to which this extent points.
+    pub start_lo: u32,
+}
+
+/// fake dir entry
+pub struct Ext4FakeDirEntry {
+    inode: u32,
+    entry_length: u16,
+    name_length: u8,
+    inode_type: u8,
+}
+
+// #[derive(Debug)]
+// pub struct Ext4ExtentPath {
+//     // Physical block number
+//     pub p_block: ext4_fsblk_t,
+//     // Single block descriptor
+//     pub block: Ext4Block,
+//     // Depth of this extent node
+//     pub depth: u16,
+//     // Max depth of the extent tree
+//     pub maxdepth: i32,
+//     // Pointer to the extent header
+//     pub header: *const Ext4ExtentHeader,
+//     // Pointer to the index in the current node
+//     pub index: *const Ext4ExtentIndex,
+//     // Pointer to the extent in the current node
+//     pub extent: *const Ext4Extent,
+// }
+
+pub fn ext4_first_extent(hdr: *const Ext4ExtentHeader) -> *const Ext4Extent {
+    unsafe {
+        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+        (hdr as *const u8).add(offset) as *const Ext4Extent
+    }
+}
+
+pub fn ext4_first_extent_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent {
+    unsafe {
+        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+        (hdr as *mut u8).add(offset) as *mut Ext4Extent
+    }
+}
+
+pub fn ext4_last_extent(hdr: *const Ext4ExtentHeader) -> *const Ext4Extent {
+    unsafe {
+        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
+        let ext_size = core::mem::size_of::<Ext4Extent>();
+        let hdr_ref = core::mem::transmute::<*const Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
+        let ext_count = hdr_ref.entries_count as usize;
+        (hdr as *const u8).add(hdr_size + (ext_count - 1) * ext_size) as *const Ext4Extent
+    }
+}
+
+pub fn ext4_last_extent_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent {
+    unsafe {
+        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
+        let ext_size = core::mem::size_of::<Ext4Extent>();
+        let hdr_ref = core::mem::transmute::<*mut Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
+        let ext_count = hdr_ref.entries_count as usize;
+
+        (hdr as *mut u8).add(hdr_size + (ext_count - 1) * ext_size) as *mut Ext4Extent
+    }
+}
+
+pub fn ext4_first_extent_index(hdr: *const Ext4ExtentHeader) -> *const Ext4ExtentIndex {
+    unsafe {
+        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+        (hdr as *const u8).add(offset) as *const Ext4ExtentIndex
+    }
+}
+
+pub fn ext4_first_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
+    unsafe {
+        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+        (hdr as *mut u8).add(offset) as *mut Ext4ExtentIndex
+    }
+}
+
+pub fn ext4_last_extent_index(hdr: *const Ext4ExtentHeader) -> *const Ext4ExtentIndex {
+    unsafe {
+        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
+        let ext_size = core::mem::size_of::<Ext4ExtentIndex>();
+        let hdr_ref = core::mem::transmute::<*const Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
+        let ext_count = hdr_ref.entries_count as usize;
+        (hdr as *const u8).add(hdr_size + (ext_count - 1) * ext_size) as *const Ext4ExtentIndex
+    }
+}
+
+pub fn ext4_last_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
+    unsafe {
+        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
+        let ext_size = core::mem::size_of::<Ext4ExtentIndex>();
+        let hdr_ref = core::mem::transmute::<*mut Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
+        let ext_count = hdr_ref.entries_count as usize;
+        (hdr as *mut u8).add(hdr_size + (ext_count - 1) * ext_size) as *mut Ext4ExtentIndex
+    }
+}
+
+#[derive(Debug)]
+pub struct Ext4ExtentPath {
+    // Physical block number
+    pub p_block: u32,
+    // Single block descriptor
+    // pub block: Ext4Block,
+    // Depth of this extent node
+    pub depth: u16,
+    // Max depth of the extent tree
+    pub maxdepth: i32,
+    // Pointer to the extent header
+    pub header: *const Ext4ExtentHeader,
+    // Pointer to the index in the current node
+    pub index: *const Ext4ExtentIndex,
+    // Pointer to the extent in the current node
+    pub extent: *const Ext4Extent,
+}
+
 pub struct Inode {
     ino: u32,
     block_group_idx: usize,
@@ -524,11 +756,127 @@ impl Inner {
 }
 
 /**@brief   Mount point descriptor.*/
+#[derive(Clone)]
 pub struct Ext4MountPoint {
     /**@brief   Mount done flag.*/
     pub mounted: bool,
     /**@brief   Mount point name (@ref ext4_mount)*/
-    pub mount_name: [char; 33],
+    pub mount_name: CString,
+    // pub mount_name_string: String,
+}
+impl Ext4MountPoint {
+    pub fn new(name: &str) -> Self {
+        Self {
+            mounted: false,
+            mount_name: CString::new(name).unwrap(),
+            // mount_name_string: name.to_string(),
+        }
+    }
+}
+impl Debug for Ext4MountPoint {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "Ext4MountPoint {{ mount_name: {:?} }}", self.mount_name)
+    }
+}
 
-    pub mount_name_string: String,
+#[repr(C)]
+union Ext4DirEnInternal {
+    name_length_high: u8, // 高8位的文件名长度
+    inode_type: u8,       // 引用的inode的类型（在rev >= 0.5中）
+}
+
+impl Debug for Ext4DirEnInternal {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        unsafe {
+            write!(
+                f,
+                "Ext4DirEnInternal {{ name_length_high: {:?} }}",
+                self.name_length_high
+            )
+        }
+    }
+}
+
+impl Default for Ext4DirEnInternal {
+    fn default() -> Self {
+        Self {
+            name_length_high: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Default)]
+struct Ext4DirEntry {
+    pub inode: u32,               // 该目录项指向的inode的编号
+    pub entry_len: u16,           // 到下一个目录项的距离
+    pub name_len: u8,             // 低8位的文件名长度
+    pub inner: Ext4DirEnInternal, // 联合体成员
+    pub name: Vec<u8>,            // 文件名
+}
+
+pub struct Ext4DirSearchResult<'a> {
+    pub block: Ext4Block<'a>,
+    pub dentry: Ext4DirEntry,
+}
+
+impl<'a> Ext4DirSearchResult<'a> {
+    pub fn new(block: Ext4Block<'a>, dentry: Ext4DirEntry) -> Self {
+        Self { block, dentry }
+    }
+}
+
+#[derive(Debug)]
+// A single block descriptor
+pub struct Ext4Block<'a> {
+    // disk block id
+    pub disk_block_id: u64,
+
+    // size BLOCK_SIZE
+    pub block_data: &'a mut Vec<u8>,
+
+    pub dirty: bool,
+}
+
+bitflags! {
+    #[derive(PartialEq, Eq)]
+    pub struct DirEntryType: u8 {
+        const EXT4_DE_UNKNOWN = 0;
+        const EXT4_DE_REG_FILE = 1;
+        const EXT4_DE_DIR = 2;
+        const EXT4_DE_CHRDEV = 3;
+        const EXT4_DE_BLKDEV = 4;
+        const EXT4_DE_FIFO = 5;
+        const SOEXT4_DE_SOCKCK = 6;
+        const EXT4_DE_SYMLINK = 7;
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Ext4OpenFlags {
+    ReadOnly,
+    WriteOnly,
+    WriteCreateTrunc,
+    WriteCreateAppend,
+    ReadWrite,
+    ReadWriteCreateTrunc,
+    ReadWriteCreateAppend,
+}
+
+// 实现一个从字符串转换为标志的函数
+// 使用core::str::FromStr特性[^1^][1]
+impl core::str::FromStr for Ext4OpenFlags {
+    type Err = String;
+
+    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        match s {
+            "r" | "rb" => Ok(Ext4OpenFlags::ReadOnly),
+            "w" | "wb" => Ok(Ext4OpenFlags::WriteOnly),
+            "a" | "ab" => Ok(Ext4OpenFlags::WriteCreateAppend),
+            "r+" | "rb+" | "r+b" => Ok(Ext4OpenFlags::ReadWrite),
+            "w+" | "wb+" | "w+b" => Ok(Ext4OpenFlags::ReadWriteCreateTrunc),
+            "a+" | "ab+" | "a+b" => Ok(Ext4OpenFlags::ReadWriteCreateAppend),
+            _ => Err(format!("Unknown open mode: {}", s)),
+        }
+    }
 }
