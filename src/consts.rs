@@ -1,6 +1,8 @@
 use bitflags::bitflags;
 
 pub const EOK: usize = 0;
+pub type ext4_lblk_t = u32;
+pub type ext4_fsblk_t = u64;
 
 pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
 pub const EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 64;

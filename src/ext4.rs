@@ -96,17 +96,17 @@ impl Ext4 {
         let inode_size = super_block.inode_size();
 
         // Load the block groups information
-        let load_block_groups = |fs: Weak<Ext4>,
-                                 block_device: Arc<dyn BlockDevice>|
-         -> Result<Vec<Ext4BlockGroup>> {
-            let block_groups_count = super_block.block_groups_count() as usize;
-            let mut block_groups = Vec::with_capacity(block_groups_count);
-            for idx in 0..block_groups_count {
-                let block_group = Ext4BlockGroup::load(block_device.clone(), &super_block, idx).unwrap();
-                block_groups.push(block_group);
-            }
-            Ok(block_groups)
-        };
+        let load_block_groups =
+            |fs: Weak<Ext4>, block_device: Arc<dyn BlockDevice>| -> Result<Vec<Ext4BlockGroup>> {
+                let block_groups_count = super_block.block_groups_count() as usize;
+                let mut block_groups = Vec::with_capacity(block_groups_count);
+                for idx in 0..block_groups_count {
+                    let block_group =
+                        Ext4BlockGroup::load(block_device.clone(), &super_block, idx).unwrap();
+                    block_groups.push(block_group);
+                }
+                Ok(block_groups)
+            };
 
         let mount_point = Ext4MountPoint::new("/");
 
@@ -185,6 +185,7 @@ impl Ext4 {
 
         let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
         let ext4_blk = Ext4Block {
+            logical_block_id: 0,
             disk_block_id: 0,
             block_data: &mut data,
             dirty: true,
@@ -196,7 +197,7 @@ impl Ext4 {
         file.flags = iflags;
 
         // load root inode
-        let root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
+        let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
 
         if !parent_inode.is_none() {
             parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
@@ -210,7 +211,7 @@ impl Ext4 {
             len = ext4_path_check(&serach_path, &mut is_goal);
 
             let r = ext4_dir_find_entry(
-                &root_inode_ref,
+                &mut root_inode_ref,
                 serach_path,
                 len as u32,
                 &mut dir_search_result,
@@ -258,10 +259,159 @@ pub fn ext4_fs_alloc_inode(child_inode_ref: &mut Ext4InodeRef) -> usize {
 pub fn ext4_dir_destroy_result() {}
 
 pub fn ext4_dir_find_entry(
-    parent: &Ext4InodeRef,
+    parent: &mut Ext4InodeRef,
     name: &str,
     name_len: u32,
     result: &mut Ext4DirSearchResult,
 ) -> usize {
+    println!("ext4_dir_find_entry {:?}", name);
+    let mut iblock = 0;
+    let mut fblock: ext4_fsblk_t = 0;
+
+    let inode_size: u32 = parent.inner.inode.size;
+    let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
+
+    while iblock < total_blocks {
+        ext4_fs_get_inode_dblk_idx(parent, iblock, &mut fblock, false);
+
+        // load_block
+        let mut data = parent.fs().block_device.read_offset(fblock as usize);
+        let mut ext4_block = Ext4Block {
+            logical_block_id: iblock,
+            disk_block_id: fblock,
+            block_data: &mut data,
+            dirty: false,
+        };
+
+        let r = ext4_dir_find_in_block(&mut ext4_block, name_len, name, result);
+
+        if r {
+            return EOK;
+        }
+
+        iblock += 1
+    }
+
     0
+}
+
+pub fn ext4_extent_get_blocks(
+    inode_ref: &mut Ext4InodeRef,
+    iblock: ext4_lblk_t,
+    max_blocks: u32,
+    result: &mut ext4_fsblk_t,
+    create: bool,
+    blocks_count: &mut u32,
+) {
+    let inode = &mut inode_ref.inner.inode;
+
+    let mut vec_extent_path: Vec<Ext4ExtentPath> = Vec::with_capacity(3);
+
+    let mut extent_path = Ext4ExtentPath::default();
+
+    ext4_find_extent(inode, iblock, &mut extent_path, &mut vec_extent_path);
+
+    let depth = unsafe { *ext4_inode_hdr(inode) }.depth;
+
+    let ex: Ext4Extent = unsafe { *vec_extent_path[depth as usize].extent };
+
+    let ee_block = ex.first_block;
+    let ee_start = ex.start_lo | (((ex.start_hi as u32) << 31) << 1);
+    let ee_len: u16 = ex.block_count;
+
+    if iblock >= ee_block && iblock <= (ee_block + ee_len as u32) {
+        let newblock = iblock - ee_block + ee_start;
+        *result = newblock as u64;
+
+        return;
+    }
+}
+
+pub fn ext4_find_extent(
+    inode: &Ext4Inode,
+    iblock: ext4_lblk_t,
+    orig_path: &mut Ext4ExtentPath,
+    v: &mut Vec<Ext4ExtentPath>,
+) {
+    let eh = &inode.block as *const [u32; 15] as *const Ext4ExtentHeader;
+
+    let extent_header = Ext4ExtentHeader::try_from(&inode.block[..2]).unwrap();
+
+    let depth = extent_header.depth;
+
+    let mut extent_path = Ext4ExtentPath::default();
+    extent_path.depth = depth;
+    extent_path.header = eh;
+
+    // depth = 0
+    ext4_ext_binsearch(&mut extent_path, iblock);
+    let extent = unsafe { *extent_path.extent };
+    let pblock = extent.start_lo | (((extent.start_hi as u32) << 31) << 1);
+    extent_path.p_block = pblock;
+
+    v.push(extent_path);
+}
+
+pub fn ext4_fs_get_inode_dblk_idx(
+    inode_ref: &mut Ext4InodeRef,
+    iblock: ext4_lblk_t,
+    fblock: &mut ext4_fsblk_t,
+    extent_create: bool,
+) {
+    let mut current_block: ext4_fsblk_t;
+    let mut current_fsblk: ext4_fsblk_t = 0;
+
+    let mut blocks_count = 0;
+    ext4_extent_get_blocks(
+        inode_ref,
+        iblock,
+        1,
+        &mut current_fsblk,
+        false,
+        &mut blocks_count,
+    );
+
+    current_block = current_fsblk;
+    *fblock = current_block;
+}
+
+pub fn ext4_dir_find_in_block(
+    block: &Ext4Block,
+    name_len: u32,
+    name: &str,
+    result: &mut Ext4DirSearchResult,
+) -> bool {
+    let mut offset = 0;
+
+    while offset < block.block_data.len() {
+        let de = Ext4DirEntry::try_from(&block.block_data[offset..]).unwrap();
+
+        offset = offset + de.entry_len as usize;
+        if de.inode == 0 {
+            continue;
+        }
+        let s = get_name(de.name, de.name_len as usize);
+
+        if let Ok(s) = s {
+            if name_len == de.name_len as u32 {
+                if name.to_string() == s {
+                    println!(
+                        "found s {:?}  name_len {:x?} de.name_len {:x?}",
+                        s, name_len, de.name_len
+                    );
+                    result.dentry.entry_len = de.entry_len;
+                    result.dentry.name = de.name;
+                    result.dentry.name_len = de.name_len;
+                    unsafe {
+                        result.dentry.inner.name_length_high = de.inner.name_length_high;
+                    }
+                    result.dentry.inode = de.inode;
+
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }

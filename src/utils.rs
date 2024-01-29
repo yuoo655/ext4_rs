@@ -163,3 +163,13 @@ pub fn ext4_path_check(path:&str, is_goal:&mut bool) -> usize{
     *is_goal = true;
     return path.len();    
 }
+
+// A function that takes a &str and returns a &[char]
+pub fn get_name(name: [u8; 255], len: usize) -> Result<String, alloc::string::FromUtf8Error> {
+    let mut v: Vec<u8> = Vec::new();
+    for i in 0..len {
+        v.push(name[i]);
+    }
+    let s = String::from_utf8(v);
+    s
+}

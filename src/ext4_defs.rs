@@ -581,6 +581,15 @@ pub struct Ext4ExtentHeader {
     pub generation: u32,
 }
 
+
+impl <T> TryFrom<&[T]> for Ext4ExtentHeader {
+    type Error = u64;
+    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
+        let data = data;
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Ext4ExtentIndex {
@@ -718,6 +727,16 @@ pub fn ext4_last_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent
     }
 }
 
+pub fn ext4_inode_hdr(inode: &Ext4Inode) -> *const Ext4ExtentHeader {
+    let eh = &inode.block as *const [u32; 15] as *const Ext4ExtentHeader;
+    eh
+}
+
+pub fn ext4_inode_hdr_mut(inode: &mut Ext4Inode) -> *mut Ext4ExtentHeader {
+    let eh = &mut inode.block as *mut [u32; 15] as *mut Ext4ExtentHeader;
+    eh
+}
+
 #[derive(Debug)]
 pub struct Ext4ExtentPath {
     // Physical block number
@@ -735,6 +754,21 @@ pub struct Ext4ExtentPath {
     // Pointer to the extent in the current node
     pub extent: *const Ext4Extent,
 }
+
+impl Default for Ext4ExtentPath {
+    fn default() -> Self {
+        Self {
+            p_block: 0,
+            // block: Ext4Block::default(),
+            depth: 0,
+            maxdepth: 0,
+            header: core::ptr::null_mut(),
+            index: core::ptr::null_mut(),
+            extent: core::ptr::null_mut(),
+        }
+    }
+}
+
 
 pub struct Ext4InodeRef {
     pub inode_num: u32,
@@ -842,9 +876,9 @@ impl Debug for Ext4MountPoint {
 }
 
 #[repr(C)]
-union Ext4DirEnInternal {
-    name_length_high: u8, // 高8位的文件名长度
-    inode_type: u8,       // 引用的inode的类型（在rev >= 0.5中）
+pub union Ext4DirEnInternal {
+    pub name_length_high: u8, // 高8位的文件名长度
+    pub inode_type: u8,       // 引用的inode的类型（在rev >= 0.5中）
 }
 
 impl Debug for Ext4DirEnInternal {
@@ -868,13 +902,33 @@ impl Default for Ext4DirEnInternal {
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Ext4DirEntry {
     pub inode: u32,               // 该目录项指向的inode的编号
     pub entry_len: u16,           // 到下一个目录项的距离
     pub name_len: u8,             // 低8位的文件名长度
     pub inner: Ext4DirEnInternal, // 联合体成员
-    pub name: Vec<u8>,            // 文件名
+    pub name: [u8; 255],            // 文件名
+}
+
+impl Default for Ext4DirEntry {
+    fn default() -> Self {
+        Self {
+            inode: 0,
+            entry_len: 0,
+            name_len: 0,
+            inner: Ext4DirEnInternal::default(),
+            name: [0; 255],
+        }
+    }
+}
+
+impl TryFrom<&[u8]> for Ext4DirEntry {
+    type Error = u64;
+    fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
+        let data = &data[..size_of::<Ext4DirEntry>()];
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+    }
 }
 
 pub struct Ext4DirSearchResult<'a> {
@@ -891,6 +945,8 @@ impl<'a> Ext4DirSearchResult<'a> {
 #[derive(Debug)]
 // A single block descriptor
 pub struct Ext4Block<'a> {
+    pub logical_block_id : u32, // 逻辑块号
+
     // disk block id
     pub disk_block_id: u64,
 
