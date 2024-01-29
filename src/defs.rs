@@ -5,173 +5,11 @@ use std::fmt::Error;
 use super::*;
 use crate::prelude::*;
 
-pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
-pub const EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 64;
-pub const EXT4_CRC32_INIT: u32 = 0xFFFFFFFF;
-
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum SeekFrom {
     Start(usize),
     End(isize),
     Current(isize),
-}
-
-/// Maximum bytes in a path
-pub const PATH_MAX: usize = 4096;
-
-/// Maximum bytes in a file name
-pub const NAME_MAX: usize = 255;
-
-/// The upper limit for resolving symbolic links
-pub const SYMLINKS_MAX: usize = 40;
-
-pub type CStr256 = FixedCStr<256>;
-pub type Str16 = FixedStr<16>;
-pub type Str64 = FixedStr<64>;
-
-/// An owned C-compatible string with a fixed capacity of `N`.
-///
-/// The string is terminated with a null byte.
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct FixedCStr<const N: usize>([u8; N]);
-
-impl<const N: usize> FixedCStr<N> {
-    pub fn len(&self) -> usize {
-        self.0.iter().position(|&b| b == 0).unwrap()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn as_str(&self) -> Result<&str> {
-        Ok(alloc::str::from_utf8(self.as_bytes())?)
-    }
-
-    pub fn as_cstr(&self) -> Result<&CStr> {
-        Ok(CStr::from_bytes_with_nul(self.as_bytes_with_nul())?)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0[0..self.len()]
-    }
-
-    pub fn as_bytes_with_nul(&self) -> &[u8] {
-        &self.0[0..=self.len()]
-    }
-}
-
-impl<'a, const N: usize> From<&'a [u8]> for FixedCStr<N> {
-    fn from(bytes: &'a [u8]) -> Self {
-        assert!(N > 0);
-
-        let mut inner = [0u8; N];
-        let len = {
-            let mut nul_byte_idx = match bytes.iter().position(|&b| b == 0) {
-                Some(idx) => idx,
-                None => bytes.len(),
-            };
-            if nul_byte_idx >= N {
-                nul_byte_idx = N - 1;
-            }
-            nul_byte_idx
-        };
-        inner[0..len].copy_from_slice(&bytes[0..len]);
-        Self(inner)
-    }
-}
-
-impl<'a, const N: usize> From<&'a str> for FixedCStr<N> {
-    fn from(string: &'a str) -> Self {
-        let bytes = string.as_bytes();
-        Self::from(bytes)
-    }
-}
-
-impl<'a, const N: usize> From<&'a CStr> for FixedCStr<N> {
-    fn from(cstr: &'a CStr) -> Self {
-        let bytes = cstr.to_bytes_with_nul();
-        Self::from(bytes)
-    }
-}
-
-impl<const N: usize> Default for FixedCStr<N> {
-    fn default() -> Self {
-        Self([0u8; N])
-    }
-}
-
-impl<const N: usize> Debug for FixedCStr<N> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        match self.as_cstr() {
-            Ok(cstr) => write!(f, "{:?}", cstr),
-            Err(_) => write!(f, "{:?}", self.as_bytes()),
-        }
-    }
-}
-
-/// An owned string with a fixed capacity of `N`.
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct FixedStr<const N: usize>([u8; N]);
-
-impl<const N: usize> FixedStr<N> {
-    pub fn len(&self) -> usize {
-        self.0.iter().position(|&b| b == 0).unwrap_or(N)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn as_str(&self) -> Result<&str> {
-        Ok(alloc::str::from_utf8(self.as_bytes())?)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0[0..self.len()]
-    }
-}
-
-impl<'a, const N: usize> From<&'a [u8]> for FixedStr<N> {
-    fn from(bytes: &'a [u8]) -> Self {
-        let mut inner = [0u8; N];
-        let len = {
-            let mut nul_byte_idx = match bytes.iter().position(|&b| b == 0) {
-                Some(idx) => idx,
-                None => bytes.len(),
-            };
-            if nul_byte_idx > N {
-                nul_byte_idx = N;
-            }
-            nul_byte_idx
-        };
-        inner[0..len].copy_from_slice(&bytes[0..len]);
-        Self(inner)
-    }
-}
-
-impl<'a, const N: usize> From<&'a str> for FixedStr<N> {
-    fn from(string: &'a str) -> Self {
-        let bytes = string.as_bytes();
-        Self::from(bytes)
-    }
-}
-
-impl<const N: usize> Default for FixedStr<N> {
-    fn default() -> Self {
-        Self([0u8; N])
-    }
-}
-
-impl<const N: usize> Debug for FixedStr<N> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        match self.as_str() {
-            Ok(string) => write!(f, "{}", string),
-            Err(_) => write!(f, "{:?}", self.as_bytes()),
-        }
-    }
 }
 
 /// 文件描述符
@@ -408,9 +246,8 @@ impl TryFrom<&[u8]> for Ext4Inode {
     }
 }
 
-impl Ext4Inode{
-
-    fn get_checksum(&self, super_block: &Ext4Superblock) -> u32{
+impl Ext4Inode {
+    fn get_checksum(&self, super_block: &Ext4Superblock) -> u32 {
         let inode_size = super_block.inode_size;
         let mut v: u32 = self.osd2.l_i_checksum_lo as u32;
         if inode_size > 128 {
@@ -444,7 +281,6 @@ impl Ext4Inode {
         super_block: &Ext4Superblock,
         inode_id: u32,
     ) -> Result<()> {
-
         let disk_pos = self.get_inode_disk_pos(super_block, block_device, inode_id);
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
@@ -454,8 +290,7 @@ impl Ext4Inode {
         Ok(())
     }
 
-    pub fn get_inode_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32{
-
+    pub fn get_inode_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32 {
         let inode_size = super_block.inode_size();
 
         let orig_checksum = self.get_checksum(super_block);
@@ -467,12 +302,16 @@ impl Ext4Inode {
         // Preparation: temporarily set bg checksum to 0
         self.osd2.l_i_checksum_lo = 0;
         self.i_checksum_hi = 0;
-        
-        checksum = ext4_crc32c(EXT4_CRC32_INIT,&super_block.uuid,super_block.uuid.len() as u32);
+
+        checksum = ext4_crc32c(
+            EXT4_CRC32_INIT,
+            &super_block.uuid,
+            super_block.uuid.len() as u32,
+        );
         checksum = ext4_crc32c(checksum, &ino_index.to_le_bytes(), 4);
         checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
 
-        // cast self to &[u8]  
+        // cast self to &[u8]
         // attention checksum size here is 0x100 inode_size is 0x97
         let self_bytes =
             unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 0x100 as usize) };
@@ -487,15 +326,19 @@ impl Ext4Inode {
         }
 
         checksum
-
     }
 
-    pub fn set_inode_checksum_value(&mut self, super_block: &Ext4Superblock, inode_id: u32, checksum: u32) {
+    pub fn set_inode_checksum_value(
+        &mut self,
+        super_block: &Ext4Superblock,
+        inode_id: u32,
+        checksum: u32,
+    ) {
         let inode_size = super_block.inode_size();
         // let csum = self.get_inode_checksum(inode_id, super_block);
 
-        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16)  as u16;
-        if inode_size > 128{
+        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        if inode_size > 128 {
             self.i_checksum_hi = (checksum >> 16) as u16;
         }
     }
@@ -504,8 +347,8 @@ impl Ext4Inode {
         let inode_size = super_block.inode_size();
         let checksum = self.get_inode_checksum(inode_id, super_block);
 
-        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16)  as u16;
-        if inode_size > 128{
+        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        if inode_size > 128 {
             self.i_checksum_hi = (checksum >> 16) as u16;
         }
     }
@@ -519,10 +362,6 @@ impl Ext4Inode {
         self.set_inode_checksum(super_block, inode_id);
         self.sync_inode_to_disk(block_device, super_block, inode_id)
     }
-
-
-
-
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -596,7 +435,11 @@ impl Ext4BlockGroup {
         self.checksum = 0;
 
         // uuid checksum
-        checksum = ext4_crc32c(EXT4_CRC32_INIT,&super_block.uuid,super_block.uuid.len() as u32);
+        checksum = ext4_crc32c(
+            EXT4_CRC32_INIT,
+            &super_block.uuid,
+            super_block.uuid.len() as u32,
+        );
 
         // bgid checksum
         checksum = ext4_crc32c(checksum, &bgid.to_le_bytes(), 4);
