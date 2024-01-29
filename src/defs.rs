@@ -1,327 +1,180 @@
 use bitflags::bitflags;
 use core::mem::size_of;
 
+use crate::defs::*;
+use crate::ext4::*;
 
-// 定义超级块结构体，参考 https://www.nongnu.org/ext2-doc/ext2.html#SUPERBLOCK
+
+
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum SeekFrom {
+    Start(usize),
+    End(isize),
+    Current(isize),
+}
+
+/// Maximum bytes in a path
+pub const PATH_MAX: usize = 4096;
+
+/// Maximum bytes in a file name
+pub const NAME_MAX: usize = 255;
+
+/// The upper limit for resolving symbolic links
+pub const SYMLINKS_MAX: usize = 40;
+
+pub type CStr256 = FixedCStr<256>;
+pub type Str16 = FixedStr<16>;
+pub type Str64 = FixedStr<64>;
+
+/// An owned C-compatible string with a fixed capacity of `N`.
+///
+/// The string is terminated with a null byte.
 #[repr(C)]
-#[derive(Debug)]
-pub struct Ext4SuperBlock {
-    pub inodes_count: u32,
-    pub blocks_count: u32,
-    pub r_blocks_count: u32,
-    pub free_blocks_count: u32,
-    pub free_inodes_count: u32,
-    pub first_data_block: u32,
-    pub log_block_size: u32,
-    pub log_frag_size: u32,
-    pub blocks_per_group: u32,
-    pub frags_per_group: u32,
-    pub inodes_per_group: u32,
-    pub mtime: u32,
-    pub wtime: u32,
-    pub mnt_count: u16,
-    pub max_mnt_count: u16,
-    pub magic: u16,
-    pub state: u16,
-    pub errors: u16,
-    pub minor_rev_level: u16,
-    pub lastcheck: u32,
-    pub checkinterval: u32,
-    pub creator_os: u32,
-    pub rev_level: u32,
-    pub def_resuid: u16,
-    pub def_resgid: u16,
-    // 以下字段仅适用于ext2 rev 1或更高版本
-    pub first_ino: u32,
-    pub inode_size: u16,
-    pub block_group_nr: u16,
-    pub feature_compat: u32,
-    pub feature_incompat: u32,
-    pub feature_ro_compat: u32,
-    pub uuid: [u8; 16],
-    pub volume_name: [u8; 16],
-    pub last_mounted: [u8; 64],
-    pub algo_bitmap: u32,
-    // 以下字段仅适用于ext3
-    pub prealloc_blocks: u8,
-    pub prealloc_dir_blocks: u8,
-    pub reserved_gdt_blocks: u16,
-    pub journal_uuid: [u8; 16],
-    pub journal_inum: u32,
-    pub journal_dev: u32,
-    pub last_orphan: u32,
-    pub hash_seed: [u32; 4],
-    pub def_hash_version: u8,
-    pub journal_backup_type: u8,
-	pub desc_size: u16,
-    pub default_mount_options: u32,
-    pub first_meta_bg: u32,
-    pub mkfs_time: u32,
-    pub journal_blocks: [u32; 17],
-    // 以下字段仅适用于ext4
-    pub blocks_count_hi: u32,
-    pub r_blocks_count_hi: u32,
-    pub free_blocks_count_hi: u32,
-    pub min_extra_isize: u16,
-    pub want_extra_isize: u16,
-    pub flags: u32,
-    pub raid_stride: u16,
-    pub mmp_interval: u16,
-    pub mmp_block: u64,
-    pub raid_stripe_width: u32,
-    pub log_groups_per_flex: u8,
-    pub checksum_type: u8,
-    pub reserved_pad: u16,
-    pub kbytes_written: u64,
-    pub snapshot_inum: u32,
-    pub snapshot_id: u32,
-    pub snapshot_r_blocks_count: u64,
-    pub snapshot_list: u32,
-    pub error_count: u32,
-    pub first_error_time: u32,
-    pub first_error_ino: u32,
-    pub first_error_block: u64,
-    pub first_error_func: [u8; 32],
-    pub first_error_line: u32,
-    pub last_error_time: u32,
-    pub last_error_ino: u32,
-    pub last_error_line: u32,
-    pub last_error_block: u64,
-    pub last_error_func: [u8; 32],
-    pub mount_opts: [u8; 64],
-    pub usr_quota_inum: u32,
-    pub grp_quota_inum: u32,
-    pub overhead_blocks: u32,
-    pub backup_bgs: [u32; 2],
-    pub encrypt_algos: [u8; 4],
-    pub encrypt_pw_salt: [u8; 16],
-    pub lpf_ino: u32,
-    pub prj_quota_inum: u32,
-    pub checksum_seed: u32,
-    pub padding2: [u8; 100],
-    pub checksum: u32,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Pod)]
+pub struct FixedCStr<const N: usize>([u8; N]);
+
+impl<const N: usize> FixedCStr<N> {
+    pub fn len(&self) -> usize {
+        self.0.iter().position(|&b| b == 0).unwrap()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn as_str(&self) -> Result<&str> {
+        Ok(alloc::str::from_utf8(self.as_bytes())?)
+    }
+
+    pub fn as_cstr(&self) -> Result<&CStr> {
+        Ok(CStr::from_bytes_with_nul(self.as_bytes_with_nul())?)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0[0..self.len()]
+    }
+
+    pub fn as_bytes_with_nul(&self) -> &[u8] {
+        &self.0[0..=self.len()]
+    }
 }
 
-// 定义inode结构体，参考 https://www.nongnu.org/ext2-doc/ext2.html#INODES
+impl<'a, const N: usize> From<&'a [u8]> for FixedCStr<N> {
+    fn from(bytes: &'a [u8]) -> Self {
+        assert!(N > 0);
+
+        let mut inner = [0u8; N];
+        let len = {
+            let mut nul_byte_idx = match bytes.iter().position(|&b| b == 0) {
+                Some(idx) => idx,
+                None => bytes.len(),
+            };
+            if nul_byte_idx >= N {
+                nul_byte_idx = N - 1;
+            }
+            nul_byte_idx
+        };
+        inner[0..len].copy_from_slice(&bytes[0..len]);
+        Self(inner)
+    }
+}
+
+impl<'a, const N: usize> From<&'a str> for FixedCStr<N> {
+    fn from(string: &'a str) -> Self {
+        let bytes = string.as_bytes();
+        Self::from(bytes)
+    }
+}
+
+impl<'a, const N: usize> From<&'a CStr> for FixedCStr<N> {
+    fn from(cstr: &'a CStr) -> Self {
+        let bytes = cstr.to_bytes_with_nul();
+        Self::from(bytes)
+    }
+}
+
+impl<const N: usize> Default for FixedCStr<N> {
+    fn default() -> Self {
+        Self([0u8; N])
+    }
+}
+
+impl<const N: usize> Debug for FixedCStr<N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self.as_cstr() {
+            Ok(cstr) => write!(f, "{:?}", cstr),
+            Err(_) => write!(f, "{:?}", self.as_bytes()),
+        }
+    }
+}
+
+/// An owned string with a fixed capacity of `N`.
 #[repr(C)]
-#[derive(Debug)]
-pub struct Ext4Inode {
-    pub mode: u16,
-    pub uid: u16,
-    pub size: u32,
-    pub atime: u32,
-    pub ctime: u32,
-    pub mtime: u32,
-    pub dtime: u32,
-    pub gid: u16,
-    pub links_count: u16,
-    pub blocks: u32,
-    pub flags: u32,
-    pub osd1: u32,
-    pub block: [u32; 15],
-    pub generation: u32,
-    pub file_acl: u32,
-    pub dir_acl: u32,
-    pub faddr: u32,
-    pub osd2: [u8; 12],
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Pod)]
+pub struct FixedStr<const N: usize>([u8; N]);
+
+impl<const N: usize> FixedStr<N> {
+    pub fn len(&self) -> usize {
+        self.0.iter().position(|&b| b == 0).unwrap_or(N)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn as_str(&self) -> Result<&str> {
+        Ok(alloc::str::from_utf8(self.as_bytes())?)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0[0..self.len()]
+    }
 }
 
-
-/**@brief   Mount point descriptor.*/
-pub struct Ext4MountPoint {
-    /**@brief   Mount done flag.*/
-    pub mounted: bool,
-    /**@brief   Mount point name (@ref ext4_mount)*/
-    pub mount_name: [char; 33],
-
-    pub mount_name_string: String,
+impl<'a, const N: usize> From<&'a [u8]> for FixedStr<N> {
+    fn from(bytes: &'a [u8]) -> Self {
+        let mut inner = [0u8; N];
+        let len = {
+            let mut nul_byte_idx = match bytes.iter().position(|&b| b == 0) {
+                Some(idx) => idx,
+                None => bytes.len(),
+            };
+            if nul_byte_idx > N {
+                nul_byte_idx = N;
+            }
+            nul_byte_idx
+        };
+        inner[0..len].copy_from_slice(&bytes[0..len]);
+        Self(inner)
+    }
 }
 
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct GroupDesc {
-    /// Lower 32-bits of location of block bitmap.
-    pub bg_block_bitmap_lo: u32,
-
-    /// Lower 32-bits of location of inode bitmap.
-    pub bg_inode_bitmap_lo: u32,
-
-    /// Lower 32-bits of location of inode table.
-    pub bg_inode_table_lo: u32,
-
-    /// Lower 16-bits of free block count.
-    pub bg_free_blocks_count_lo: u16,
-
-    /// Lower 16-bits of free inode count.
-    pub bg_free_inodes_count_lo: u16,
-
-    /// Lower 16-bits of directory count.
-    pub bg_used_dirs_count_lo: u16,
-
-    /// Block group flags
-    pub bg_flags: GroupFlags,
-
-    /// Lower 32-bits of location of snapshot exclusion bitmap.
-    pub bg_exclude_bitmap_lo: u32,
-
-    /// Lower 16-bits of the block bitmap checksum.
-    pub bg_block_bitmap_csum_lo: u16,
-
-    /// Lower 16-bits of the inode bitmap checksum.
-    pub bg_inode_bitmap_csum_lo: u16,
-
-    /// Lower 16-bits of unused inode count.
-    /// If set, we needn’t scan past the (sb.s_inodes_per_group - gdt.bg_itable_unused) th
-    /// entry in the inode table for this group.
-    pub bg_itable_unused_lo: u16,
-
-    /// Group descriptor checksum;
-    /// crc16(sb_uuid+group_num+bg_desc) if the RO_COMPAT_GDT_CSUM feature is set,
-    /// or crc32c(sb_uuid+group_num+bg_desc) & 0xFFFF if the RO_COMPAT_METADATA_CSUM feature is set.
-    /// The bg_checksum field in bg_desc is skipped when calculating crc16 checksum,
-    /// and set to zero if crc32c checksum is used.
-    pub bg_checksum: u16,
-
-    /// Upper 32-bits of location of block bitmap.
-    pub bg_block_bitmap_hi: u32,
-
-    /// Upper 32-bits of location of inodes bitmap.
-    pub bg_inode_bitmap_hi: u32,
-
-    /// Upper 32-bits of location of inodes table.
-    pub bg_inode_table_hi: u32,
-
-    /// Upper 16-bits of free block count.
-    pub bg_free_blocks_count_hi: u16,
-
-    /// Upper 16-bits of free inode count.
-    pub bg_free_inodes_count_hi: u16,
-
-    /// Upper 16-bits of directory count.
-    pub bg_used_dirs_count_hi: u16,
-
-    /// Upper 16-bits of unused inode count.
-    pub bg_itable_unused_hi: u16,
-
-    /// Upper 32-bits of location of snapshot exclusion bitmap.
-    pub bg_exclude_bitmap_hi: u32,
-
-    /// Upper 16-bits of the block bitmap checksum.
-    pub bg_block_bitmap_csum_hi: u16,
-
-    /// Upper 16-bits of the inode bitmap checksum.
-    pub bg_inode_bitmap_csum_hi: u16,
-
-    /// Padding to 64 bytes.
-    pub bg_reserved: u32,
+impl<'a, const N: usize> From<&'a str> for FixedStr<N> {
+    fn from(string: &'a str) -> Self {
+        let bytes = string.as_bytes();
+        Self::from(bytes)
+    }
 }
 
-// 定义目录项结构体，参考 https://www.nongnu.org/ext2-doc/ext2.html#DIRECTORY-ENTRIES
-#[repr(C)]
-#[derive(Debug)]
-pub struct Ext4DirEntry {
-    pub inode: u32,
-    pub rec_len: u16,
-    pub name_len: u8,
-    pub file_type: u8,
-    pub name: [u8; 255],
+impl<const N: usize> Default for FixedStr<N> {
+    fn default() -> Self {
+        Self([0u8; N])
+    }
 }
 
-
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct Ext4ExtentHeader {
-    /// Magic number, 0xF30A.
-    pub eh_magic: u16,
-
-    /// Number of valid entries following the header.
-    pub eh_entries: u16,
-
-    /// Maximum number of entries that could follow the header.
-    pub eh_max: u16,
-
-    /// Depth of this extent node in the extent tree.
-    /// 0 = this extent node points to data blocks;
-    /// otherwise, this extent node points to other extent nodes.
-    /// The extent tree can be at most 5 levels deep:
-    /// a logical block number can be at most 2^32,
-    /// and the smallest n that satisfies 4*(((blocksize - 12)/12)^n) >= 2^32 is 5.
-    pub eh_depth: u16,
-
-    /// Generation of the tree. (Used by Lustre, but not standard ext4).
-    pub eh_generation: u32,
+impl<const N: usize> Debug for FixedStr<N> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        match self.as_str() {
+            Ok(string) => write!(f, "{}", string),
+            Err(_) => write!(f, "{:?}", self.as_bytes()),
+        }
+    }
 }
-
-
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct Ext4ExtentIndex {
-    /// This index node covers file blocks from ‘block’ onward.
-    pub ei_block: u32,
-
-    /// Lower 32-bits of the block number of the extent node that is
-    /// the next level lower in the tree. The tree node pointed to
-    /// can be either another internal node or a leaf node, described below.
-    pub ei_leaf_lo: u32,
-
-    /// Upper 16-bits of the previous field.
-    pub ei_leaf_hi: u16,
-
-    pub ei_unused: u16,
-}
-
-
-
-
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct Ext4Extent {
-    /// First file block number that this extent covers.
-    pub ee_block: u32,
-
-    /// Number of blocks covered by extent.
-    /// If the value of this field is <= 32768, the extent is initialized.
-    /// If the value of the field is > 32768, the extent is uninitialized
-    /// and the actual extent length is ee_len - 32768.
-    /// Therefore, the maximum length of a initialized extent is 32768 blocks,
-    /// and the maximum length of an uninitialized extent is 32767.
-    pub ee_len: u16,
-
-    /// Upper 16-bits of the block number to which this extent points.
-    pub ee_start_hi: u16,
-
-    /// Lower 32-bits of the block number to which this extent points.
-    pub ee_start_lo: u32,
-}
-
-
-#[derive(Default, Debug)]
-// A single block descriptor
-pub struct Ext4Block {
-    // Logical block ID
-    pub lb_id: u64,
-    // Buffer
-    // buf: Ext4Buf,
-    // Data buffer
-    pub data: Vec<u8>,
-}
-
-/**
- * Linked list directory entry structure
- */
-pub struct Ext4DirEn {
-    pub inode: u32,     // I-node for the entry
-    pub entry_len: u16, // Distance to the next directory entry
-    pub name_len: u8,   // Lower 8 bits of name length
-    pub name_length_high: u8, // Internal fields
-    pub name: [u8; 255],      // Entry name
-}
-
 
 /// 文件描述符
-pub struct Ext4File {
+pub struct Ext4FileNew {
     /// 挂载点句柄
-    pub mp: Ext4MountPoint,
+    pub mp: *mut Ext4MountPoint,
     /// 文件 inode id
     pub inode: u32,
     /// 打开标志
@@ -333,212 +186,10 @@ pub struct Ext4File {
 }
 
 
-
-pub  struct Ext4DirSearchResult {
-    // block: Ext4Block,
-    pub dentry: Ext4DirEn,
-}
-
-
-#[derive(Debug)]
-pub struct Ext4ExtentPath {
-    // Physical block number
-    pub p_block: ext4_fsblk_t,
-    // Single block descriptor
-    pub block: Ext4Block,
-    // Depth of this extent node
-    pub depth: u16,
-    // Max depth of the extent tree
-    pub maxdepth: i32,
-    // Pointer to the extent header
-    pub header: *const Ext4ExtentHeader,
-    // Pointer to the index in the current node
-    pub index: Ext4ExtentIndex,
-    // Pointer to the extent in the current node
-    pub extent: *const Ext4Extent,
-}
-
-
-
-bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-    pub struct GroupFlags: u16 {
-        /// inode table and bitmap are not initialized
-        const INODE_UNINIT = 0x1;
-        /// block bitmap is not initialized
-        const BLOCK_UNINIT = 0x2;
-        /// inode table is zeroed
-        const INODE_ZEROED = 0x4;
-    }
-}
-
-bitflags! {
-    #[derive(PartialEq, Debug)]
-    struct InodeMode: u16 {
-        const S_IFSOCK = 0xC000;
-        const S_IFLNK = 0xA000;
-        const S_IFREG = 0x8000;
-        const S_IFBLK = 0x6000;
-        const S_IFDIR = 0x4000;
-        const S_IFCHR = 0x2000;
-        const S_IFIFO = 0x1000;
-    }
-}
-
-bitflags! {
-    #[derive(PartialEq, Eq)]
-    pub struct DirEntryType: u8 {
-        const UNKNOWN = 0;
-        const REG_FILE = 1;
-        const DIR = 2;
-        const CHRDEV = 3;
-        const BLKDEV = 4;
-        const FIFO = 5;
-        const SOCK = 6;
-        const SYMLINK = 7;
-    }
-}
-
-
-
-pub const BASE_OFFSET: u64 = 1024; // 超级块的偏移量
-pub const BLOCK_SIZE: u64 = 4096; // 块大小
-pub const INODE_SIZE: u64 = 128; // inode大小
-pub const ROOT_INODE: u64 = 2; // 根目录的inode号
-pub type ext4_lblk_t = u32;
-pub type ext4_fsblk_t = u64;
-
-
-
-
-impl Ext4ExtentHeader {
-    pub fn from_bytes_u32(bytes: &[u32]) -> Ext4ExtentHeader {
-        let size = size_of::<Self>();
-        let src = bytes.as_ptr() as *const Self;
-        let mut dst = Self {
-            eh_magic: 0,
-            eh_entries: 0,
-            eh_max: 0,
-            eh_depth: 0,
-            eh_generation: 0,
-        };
-        let ptr = &mut dst as *mut Ext4ExtentHeader as *mut Ext4ExtentHeader;
-        unsafe { core::ptr::copy_nonoverlapping(src, ptr, 1) };
-        dst
-    }
-
-}
-
-impl Ext4DirEntry{
-    pub fn from_bytes_offset(bytes: &[u8], offset: usize) -> Ext4DirEntry {
-        let new_bytes = &bytes[offset..];
-        let size = size_of::<Self>();
-        let src = new_bytes.as_ptr() as *const Self;
-        let mut dst = Self {
-            inode: 0,
-            rec_len: 0,
-            name_len: 0,
-            file_type: 0,
-            name: [0; 255],
-        };
-        let ptr = &mut dst as *mut Ext4DirEntry as *mut Ext4DirEntry;
-        unsafe { core::ptr::copy_nonoverlapping(src, ptr, 1) };
-        dst
-    }
-}
-
-impl Ext4ExtentIndex{
-    pub fn from_bytes_u32(bytes: &[u32]) -> Ext4ExtentIndex {
-        let size = size_of::<Self>();
-        let src = bytes.as_ptr() as *const Self;
-        let mut dst = Self {
-            ei_block: 0,
-            ei_leaf_lo: 0,
-            ei_leaf_hi: 0,
-            ei_unused: 0,
-        };
-        let ptr = &mut dst as *mut Ext4ExtentIndex as *mut Ext4ExtentIndex;
-        unsafe { core::ptr::copy_nonoverlapping(src, ptr, 1) };
-        dst
-    }
-}
-
-impl Ext4Extent{
-    pub fn from_bytes_u32(bytes: &[u32]) -> Ext4Extent {
-        let size = size_of::<Self>();
-        let src = bytes.as_ptr() as *const Self;
-        let mut dst = Self {
-            ee_block: 0,
-            ee_len: 0,
-            ee_start_hi: 0,
-            ee_start_lo: 0,
-        };
-        let ptr = &mut dst as *mut Ext4Extent as *mut Ext4Extent;
-        unsafe { core::ptr::copy_nonoverlapping(src, ptr, 1) };
-        dst
-    }
-}
-
-impl Default for Ext4ExtentPath {
-    fn default() -> Self {
-        Self {
-            p_block: 0,
-            block: Ext4Block::default(),
-            depth: 0,
-            maxdepth: 0,
-            header: core::ptr::null_mut(),
-            index: Ext4ExtentIndex::default(),
-            extent: core::ptr::null_mut(),
-        }
-    }
-}
-
-
-impl Ext4MountPoint {
-    pub fn new(name: &str) -> Self {
-        let name_string = name.to_string();
-        let mut arr: [char; 33] = ['0'; 33];
-        for (i, c) in name.chars().enumerate() {
-            if i >= arr.len() {
-                break;
-            }
-            arr[i] = c;
-        }
-        Ext4MountPoint {
-            mounted: true,
-            mount_name: arr,
-            mount_name_string: name_string,
-        }
-    }
-}
-
-impl Default for Ext4DirEn {
-    fn default() -> Self {
-        Self {
-            inode: 0,     // I-node for the entry
-            entry_len: 0, // Distance to the next directory entry
-            name_len: 0,  // Lower 8 bits of name length
-            name_length_high: 0,
-            name: [0u8; 255],
-        }
-    }
-
-
-}
-impl Default for Ext4DirSearchResult {
-    fn default() -> Self {
-        Self {
-            dentry: Ext4DirEn::default(),
-        }
-    }
-}
-
-
-impl Ext4File{
-    pub fn new(mp: Ext4MountPoint) -> Self{
-
+impl Ext4FileNew{
+    pub fn new() -> Self{
         Self{
-            mp: mp,
+            mp: core::ptr::null_mut(),
             inode: 0,
             flags: 0,
             fsize: 0,
@@ -546,6 +197,171 @@ impl Ext4File{
         }
     }
 }
-pub trait Ext4Traits {
-    fn read_block(offset: u64) ->Vec<u8>;
+
+
+// 结构体表示超级块
+#[repr(C)]
+pub struct Ext4Superblock {
+    inodes_count: u32, // 节点数
+    blocks_count_lo: u32, // 块数
+    reserved_blocks_count_lo: u32, // 保留块数
+    free_blocks_count_lo: u32, // 空闲块数
+    free_inodes_count: u32, // 空闲节点数
+    first_data_block: u32, // 第一个数据块
+    log_block_size: u32, // 块大小
+    log_cluster_size: u32, // 废弃的片段大小
+    blocks_per_group: u32, // 每组块数
+    frags_per_group: u32, // 废弃的每组片段数
+    inodes_per_group: u32, // 每组节点数
+    mount_time: u32, // 挂载时间
+    write_time: u32, // 写入时间
+    mount_count: u16, // 挂载次数
+    max_mount_count: u16, // 最大挂载次数
+    magic: u16, // 魔数，0xEF53
+    state: u16, // 文件系统状态
+    errors: u16, // 检测到错误时的行为
+    minor_rev_level: u16, // 次版本号
+    last_check_time: u32, // 最后检查时间
+    check_interval: u32, // 检查间隔
+    creator_os: u32, // 创建者操作系统
+    rev_level: u32, // 版本号
+    def_resuid: u16, // 保留块的默认uid
+    def_resgid: u16, // 保留块的默认gid
+
+    // 仅适用于EXT4_DYNAMIC_REV超级块的字段
+    first_inode: u32, // 第一个非保留节点
+    inode_size: u16, // 节点结构的大小
+    block_group_index: u16, // 此超级块的块组索引
+    features_compatible: u32, // 兼容特性集
+    features_incompatible: u32, // 不兼容特性集
+    features_read_only: u32, // 只读兼容特性集
+    uuid: [u8; 16], // 卷的128位uuid
+    volume_name: [u8; 16], // 卷名
+    last_mounted: [u8; 64], // 最后挂载的目录
+    algorithm_usage_bitmap: u32, // 用于压缩的算法
+
+    // 性能提示。只有当EXT4_FEATURE_COMPAT_DIR_PREALLOC标志打开时，才进行目录预分配
+    s_prealloc_blocks: u8, // 尝试预分配的块数
+    s_prealloc_dir_blocks: u8, // 为目录预分配的块数
+    s_reserved_gdt_blocks: u16, // 在线增长时每组保留的描述符数
+
+    // 如果EXT4_FEATURE_COMPAT_HAS_JOURNAL设置，表示支持日志
+    journal_uuid: [u8; 16], // 日志超级块的UUID
+    journal_inode_number: u32, // 日志文件的节点号
+    journal_dev: u32, // 日志文件的设备号
+    last_orphan: u32, // 待删除节点的链表头
+    hash_seed: [u32; 4], // HTREE散列种子
+    default_hash_version: u8, // 默认的散列版本
+    journal_backup_type: u8,
+    desc_size: u16, // 组描述符的大小
+    default_mount_opts: u32, // 默认的挂载选项
+    first_meta_bg: u32, // 第一个元数据块组
+    mkfs_time: u32, // 文件系统创建的时间
+    journal_blocks: [u32; 17], // 日志节点的备份
+
+    // 如果EXT4_FEATURE_COMPAT_64BIT设置，表示支持64位
+    blocks_count_hi: u32, // 块数
+    reserved_blocks_count_hi: u32, // 保留块数
+    free_blocks_count_hi: u32, // 空闲块数
+    min_extra_isize: u16, // 所有节点至少有#字节
+    want_extra_isize: u16, // 新节点应该保留#字节
+    flags: u32, // 杂项标志
+    raid_stride: u16, // RAID步长
+    mmp_interval: u16, // MMP检查的等待秒数
+    mmp_block: u64, // 多重挂载保护的块
+    raid_stripe_width: u32, // 所有数据磁盘上的块数（N * 步长）
+    log_groups_per_flex: u8, // FLEX_BG组的大小
+    checksum_type: u8,
+    reserved_pad: u16,
+    kbytes_written: u64, // 写入的千字节数
+    snapshot_inum: u32, // 活动快照的节点号
+    snapshot_id: u32, // 活动快照的顺序ID
+    snapshot_r_blocks_count: u64, // 为活动快照的未来使用保留的块数
+    snapshot_list: u32, // 磁盘上快照列表的头节点号
+    error_count: u32, // 文件系统错误的数目
+    first_error_time: u32, // 第一次发生错误的时间
+    first_error_ino: u32, // 第一次发生错误的节点号
+    first_error_block: u64, // 第一次发生错误的块号
+    first_error_func: [u8; 32], // 第一次发生错误的函数
+    first_error_line: u32, // 第一次发生错误的行号
+    last_error_time: u32, // 最近一次发生错误的时间
+    last_error_ino: u32, // 最近一次发生错误的节点号
+    last_error_line: u32, // 最近一次发生错误的行号
+    last_error_block: u64, // 最近一次发生错误的块号
+    last_error_func: [u8; 32], // 最近一次发生错误的函数
+    mount_opts: [u8; 64],
+    usr_quota_inum: u32, // 用于跟踪用户配额的节点
+    grp_quota_inum: u32, // 用于跟踪组配额的节点
+    overhead_clusters: u32, // 文件系统中的开销块/簇
+    backup_bgs: [u32; 2], // 有sparse_super2超级块的组
+    encrypt_algos: [u8; 4], // 使用的加密算法
+    encrypt_pw_salt: [u8; 16], // 用于string2key算法的盐
+    lpf_ino: u32, // lost+found节点的位置
+    padding: [u32; 100], // 块的末尾的填充
+    checksum: u32, // crc32c(superblock)
 }
+
+
+impl TryFrom<Vec<u8>> for Ext4Superblock{
+    type Error = u64;
+    fn try_from(value: Vec<u8>) -> Result<Self, u64> {
+        let data = &value[..size_of::<Ext4Superblock>()];
+        unsafe { core::ptr::read(data.as_ptr() as *const _) }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct Ext4BlockGroup {
+    block_bitmap_lo: u32, // 块位图块
+    inode_bitmap_lo: u32, // 节点位图块
+    inode_table_first_block_lo: u32, // 节点表块
+    free_blocks_count_lo: u16, // 空闲块数
+    free_inodes_count_lo: u16, // 空闲节点数
+    used_dirs_count_lo: u16, // 目录数
+    flags: u16, // EXT4_BG_flags (INODE_UNINIT, etc)
+    exclude_bitmap_lo: u32, // 快照排除位图
+    block_bitmap_csum_lo: u16, // crc32c(s_uuid+grp_num+bbitmap) LE
+    inode_bitmap_csum_lo: u16, // crc32c(s_uuid+grp_num+ibitmap) LE
+    itable_unused_lo: u16, // 未使用的节点数
+    checksum: u16, // crc16(sb_uuid+group+desc)
+
+    block_bitmap_hi: u32, // 块位图块 MSB
+    inode_bitmap_hi: u32, // 节点位图块 MSB
+    inode_table_first_block_hi: u32, // 节点表块 MSB
+    free_blocks_count_hi: u16, // 空闲块数 MSB
+    free_inodes_count_hi: u16, // 空闲节点数 MSB
+    used_dirs_count_hi: u16, // 目录数 MSB
+    itable_unused_hi: u16, // 未使用的节点数 MSB
+    exclude_bitmap_hi: u32, // 快照排除位图 MSB
+    block_bitmap_csum_hi: u16, // crc32c(s_uuid+grp_num+bbitmap) BE
+    inode_bitmap_csum_hi: u16, // crc32c(s_uuid+grp_num+ibitmap) BE
+    reserved: u32, // 填充
+}
+
+
+
+pub struct Inode{
+    ino: u32,
+    block_group_idx: usize,
+    inner: Inner,
+    fs: Weak<Ext4>,
+}
+
+impl Inode{
+    pub fn fs(&self) -> Arc<Ext4> {
+        self.fs.upgrade().unwrap()
+    }
+}
+
+struct Inner {
+    inode: Ext4Inode,
+    weak_self: Weak<Inode>,
+}
+
+impl Inner{
+    pub fn inode(&self) -> Arc<Ext4Inode> {
+        self.weak_self.upgrade().unwrap()
+    }
+}
+
