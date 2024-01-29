@@ -4,7 +4,7 @@
 
 ```shell
 sh gen_write_img.sh
-cargo test
+cargo test test_write
 ```
 
 # ext4trait

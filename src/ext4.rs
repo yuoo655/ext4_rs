@@ -1838,7 +1838,7 @@ pub fn ext4_balloc_alloc_block<A: Ext4Traits>(
     ext4_fs_set_inode_checksum::<A>(&mut inode_data, inode_ref.index);
 
     let block_offset = get_inode_block::<A>(inode_ref.index as u64, &super_block);
-    let mut write_back_data = [0u8; 0x80];
+    let mut write_back_data = [0u8; 0x9c];
     copy_inode_to_array(&inode_data, &mut write_back_data);
     A::write_block(block_offset, &write_back_data);
 
@@ -3482,6 +3482,14 @@ pub fn ext4_fwrite<A: Ext4Traits>(ext4_file: &mut Ext4File, data: &[u8], size: u
         let write_data = A::read_block(offset);
         println!("write data {:x?}", &write_data[..10]);
     }
+
+    let mut inode = read_inode::<A>(ext4_file.inode as u64, &super_block);
+    inode.size = write_size as u32;
+    let block_offset = get_inode_block::<A>(inode_ref.index as u64, &super_block);
+    let mut write_back_data = [0u8; 0x9c];
+    copy_inode_to_array(&inode, &mut write_back_data);
+    A::write_block(block_offset, &write_back_data);
+
 }
 
 pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u32) -> bool {
