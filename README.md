@@ -7,6 +7,14 @@ sh gen_img.sh
 cargo run
 ```
 
+
+# write test
+
+```shell
+sh gen_write_img.sh
+cargo test
+```
+
 # ext4trait
 
 impl Ext4Traits
@@ -50,9 +58,3 @@ impl Ext4Traits for Ext4TraitsImpl{
 
 ```
 
-
-# write test
-```sh
-sh gen_write_img.sh
-cargo test
-```
