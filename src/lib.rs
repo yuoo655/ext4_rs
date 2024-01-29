@@ -6,6 +6,8 @@ pub use defs::*;
 pub use ext4::*;
 pub use prelude::*;
 
+extern crate alloc;
+
 #[cfg(test)]
 mod tests {
     mod write_test {
