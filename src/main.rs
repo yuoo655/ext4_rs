@@ -64,11 +64,13 @@ pub fn main() {
 
     //write back to device
     let block_offset = get_inode_block::<Hal>(idx as u64, &super_block);
-    let mut write_back_data = [0u8; 0x80];
+    let mut write_back_data = [0u8; 0x9c];
     copy_inode_to_array(&inode_data, &mut write_back_data);
     Hal::write_block(block_offset, &write_back_data);
 
     let mut new_inode_data = read_inode::<Hal>(idx as u64, &super_block);
+
+    println!("new_inode_data = {:#x?}", &new_inode_data);
     let mut child_inode_ref = Ext4InodeRef {
         inode: &mut new_inode_data,
         index: idx,
@@ -86,6 +88,18 @@ pub fn main() {
         name_len,
         false,
     );
+
+    inode_data.links_count += 1;
+    inode_data.i_extra_isize += 0x20;
+
+    //write back to device
+    let block_offset = get_inode_block::<Hal>(idx as u64, &super_block);
+    let mut write_back_data = [0u8; 0x9c];
+    copy_inode_to_array(&inode_data, &mut write_back_data);
+    Hal::write_block(block_offset, &write_back_data);
+
+
+
 
     ext4_fs_set_inode_checksum::<Hal>(&mut root_inode, 2);
     ext4_fs_set_inode_checksum::<Hal>(&mut inode_data, idx);
