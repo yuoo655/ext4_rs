@@ -1,13 +1,5 @@
 # rust ext4 fs no_std
 
-# run example
-```shell
-python3 gen_test_files.py
-sh gen_img.sh
-cargo run
-```
-
-
 # write test
 
 ```shell
