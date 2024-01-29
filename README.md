@@ -1,9 +1,8 @@
 # rust ext4 fs no_std
 
-# run example
+# run write example
 ```shell
-python3 gen_test_files.py
-sh gen_img.sh
+sh gen_write_img.sh
 cargo run
 ```
 
@@ -27,13 +26,17 @@ impl Ext4Traits for Ext4TraitsImpl{
         let r = file.read_exact(&mut buf);
         buf
     }
+    fn write_block(offset: u64, buf: &[u8]) {]
+        use std::fs::OpenOptions;
+        use std::io::{Read, Seek, Write};
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("ex4.img")
+            .unwrap();
+    
+        let r = file.seek(std::io::SeekFrom::Start(offset));
+        let r = file.write_all(&buf);
+    }
 }
-    
-    let mp = Ext4MountPoint::new("/");
-    let path = "/dirtest1/dirtest2/../../dirtest1/dirtest2/dirtest3/dirtest4/dirtest5/../dirtest5/2.txt";
-    let mut ext4_file = Ext4File::new(mp);
-    
-    ext4_generic_open::<Ext4TraitsImpl>( &mut ext4_file, path);
-    ext4_file_read::<Ext4TraitsImpl>( &mut ext4_file);
-
 ```
