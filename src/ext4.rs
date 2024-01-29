@@ -168,7 +168,7 @@ pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u3
 
 pub trait BlockDevice: Send + Sync + Any + Debug {
     fn read_offset(&self, offset: usize) -> Vec<u8>;
-    fn write_offset(&self);
+    fn write_offset(&self, offset: usize, data:&[u8]);
 }
 
 impl dyn BlockDevice {
@@ -210,10 +210,10 @@ impl Ext4 {
             let mut block_groups = Vec::with_capacity(block_groups_count);
             for idx in 0..block_groups_count {
                 let block_group = Ext4BlockGroup::load(
-                    idx,
                     block_device,
                     &super_block,
-                    fs.clone(),
+                    idx,
+                    // fs.clone(),
                 )?;
                 block_groups.push(block_group);
             }

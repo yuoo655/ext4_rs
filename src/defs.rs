@@ -5,6 +5,10 @@ use std::fmt::Error;
 use super::*;
 use crate::prelude::*;
 
+pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
+pub const EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 64;
+pub const EXT4_CRC32_INIT: u32 = 0xFFFFFFFF;
+
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum SeekFrom {
     Start(usize),
@@ -308,6 +312,16 @@ impl TryFrom<Vec<u8>> for Ext4Superblock {
 }
 
 impl Ext4Superblock {
+    pub fn sync_super_block_to_disk(&self, block_device: &dyn BlockDevice) -> Result<()> {
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
+        };
+        block_device.write_offset(BASE_OFFSET, data);
+        Ok(())
+    }
+}
+
+impl Ext4Superblock {
     /// Returns the size of inode structure.
     pub fn inode_size(&self) -> u16 {
         self.inode_size
@@ -330,6 +344,16 @@ impl Ext4Superblock {
     /// Returns the number of block groups.
     pub fn block_groups_count(&self) -> u32 {
         (self.blocks_count_hi.to_le() as u32) << 32 | self.blocks_count_lo
+    }
+
+    pub fn desc_size(&self) -> u16 {
+        let size = self.desc_size;
+
+        if size < EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            return EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE as u16;
+        } else {
+            size
+        }
     }
 }
 
@@ -376,8 +400,133 @@ pub struct Linux2 {
     pub l_i_reserved: u16,
 }
 
+impl TryFrom<&[u8]> for Ext4Inode {
+    type Error = u64;
+    fn try_from(data: &[u8]) -> Result<Self> {
+        let data = &data[..size_of::<Ext4Inode>()];
+        unsafe { core::ptr::read(data.as_ptr() as *const _) }
+    }
+}
+
+impl Ext4Inode{
+
+    fn get_checksum(&self, super_block: &Ext4Superblock) -> u32{
+        let inode_size = super_block.inode_size;
+        let mut v: u32 = self.osd2.l_i_checksum_lo as u32;
+        if inode_size > 128 {
+            v |= (self.i_checksum_hi as u32) << 16;
+        }
+        v
+    }
+}
+
+impl Ext4Inode {
+    pub fn get_inode_disk_pos(
+        &self,
+        super_block: &Ext4Superblock,
+        block_device: &dyn BlockDevice,
+        inode_id: u32,
+    ) -> usize {
+        let inodes_per_group = super_block.inodes_per_group;
+        let inode_size = super_block.inode_size;
+        let group = (inode_id - 1) / inodes_per_group;
+        let index = (inode_id - 1) % inodes_per_group;
+
+        let mut inode_table_blk_num =
+            Ext4BlockGroup::load(block_device, super_block, group as usize).unwrap();
+        let mut offset = inode_table_blk_num * BLOCK_SIZE + index * inode_size as u32;
+        offset
+    }
+
+    pub fn sync_inode_to_disk(
+        &self,
+        block_device: &dyn BlockDevice,
+        super_block: &Ext4Superblock,
+        inode_id: u32,
+    ) -> Result<()> {
+
+        let disk_pos = self.get_inode_disk_pos(super_block, block_device, inode_id);
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
+        };
+        block_device.write_offset(disk_pos, data);
+
+        Ok(())
+    }
+
+    pub fn get_inode_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32{
+
+        let inode_size = super_block.inode_size();
+
+        let orig_checksum = self.get_checksum(super_block);
+        let mut checksum = 0;
+
+        let ino_index = inode_id as u32;
+        let ino_gen = self.generation;
+
+        // Preparation: temporarily set bg checksum to 0
+        self.osd2.l_i_checksum_lo = 0;
+        self.i_checksum_hi = 0;
+        
+        checksum = ext4_crc32c(EXT4_CRC32_INIT,&super_block.uuid,super_block.uuid.len() as u32);
+        checksum = ext4_crc32c(checksum, &ino_index.to_le_bytes(), 4);
+        checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
+
+        // cast self to &[u8]  
+        // attention checksum size here is 0x100 inode_size is 0x97
+        let self_bytes =
+            unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 0x100 as usize) };
+
+        // inode checksum
+        checksum = ext4_crc32c(checksum, self_bytes, inode_size as u32);
+
+        self.set_inode_checksum_value(super_block, inode_id, checksum);
+
+        if inode_size == 128 {
+            checksum &= 0xFFFF;
+        }
+
+        checksum
+
+    }
+
+    pub fn set_inode_checksum_value(&mut self, super_block: &Ext4Superblock, inode_id: u32, checksum: u32) {
+        let inode_size = super_block.inode_size();
+        // let csum = self.get_inode_checksum(inode_id, super_block);
+
+        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16)  as u16;
+        if inode_size > 128{
+            self.i_checksum_hi = (checksum >> 16) as u16;
+        }
+    }
+
+    pub fn set_inode_checksum(&mut self, super_block: &Ext4Superblock, inode_id: u32) {
+        let inode_size = super_block.inode_size();
+        let checksum = self.get_inode_checksum(inode_id, super_block);
+
+        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16)  as u16;
+        if inode_size > 128{
+            self.i_checksum_hi = (checksum >> 16) as u16;
+        }
+    }
+
+    pub fn sync_inode_to_disk_with_csum(
+        &mut self,
+        block_device: &dyn BlockDevice,
+        super_block: &Ext4Superblock,
+        inode_id: u32,
+    ) -> Result<()> {
+        self.set_inode_checksum(super_block, inode_id);
+        self.sync_inode_to_disk(block_device, super_block, inode_id)
+    }
+
+
+
+
+}
+
 #[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
+#[repr(C, packed)]
 pub struct Ext4BlockGroup {
     block_bitmap_lo: u32,            // 块位图块
     inode_bitmap_lo: u32,            // 节点位图块
@@ -413,27 +562,95 @@ impl TryFrom<&[u8]> for Ext4BlockGroup {
     }
 }
 
+impl Ext4BlockGroup {
+    pub fn sync_block_group_to_disk(
+        &self,
+        block_device: &dyn BlockDevice,
+        bgid: usize,
+        super_block: &Ext4Superblock,
+    ) -> Result<()> {
+        let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
+        let dsc_per_block = dsc_cnt;
+        let dsc_id = bgid / dsc_cnt;
+        let first_meta_bg = super_block.first_meta_bg;
+        let first_data_block = super_block.first_data_block;
+        let block_id = first_data_block as usize + dsc_id + 1;
+        let offset = (bgid % dsc_cnt) * super_block.desc_size as usize;
 
-impl Ext4BlockGroup{
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroup>())
+        };
+        block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
+        Ok(())
+    }
+
+    pub fn get_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
+        let desc_size = super_block.desc_size();
+
+        let mut orig_checksum = 0;
+        let mut checksum = 0;
+
+        orig_checksum = self.checksum;
+
+        // 准备：暂时将bg校验和设为0
+        self.checksum = 0;
+
+        // uuid checksum
+        checksum = ext4_crc32c(EXT4_CRC32_INIT,&super_block.uuid,super_block.uuid.len() as u32);
+
+        // bgid checksum
+        checksum = ext4_crc32c(checksum, &bgid.to_le_bytes(), 4);
+
+        // cast self to &[u8]
+        let self_bytes =
+            unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 0x40 as usize) };
+
+        // bg checksum
+        checksum = ext4_crc32c(checksum, self_bytes, desc_size as u32);
+
+        self.checksum = orig_checksum;
+
+        let crc = (checksum & 0xFFFF) as u16;
+
+        crc
+    }
+
+    pub fn set_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) {
+        let csum = self.get_block_group_checksum(bgid, super_block);
+        self.checksum = csum;
+    }
+
+    pub fn sync_to_disk_with_csum(
+        &mut self,
+        block_device: &dyn BlockDevice,
+        bgid: usize,
+        super_block: &Ext4Superblock,
+    ) -> Result<()> {
+        self.set_block_group_checksum(bgid as u32, super_block);
+        self.sync_block_group_to_disk(block_device, bgid, super_block)
+    }
+}
+
+impl Ext4BlockGroup {
     pub fn load(
-        block_group_idx: usize,
         block_device: &dyn BlockDevice,
         super_block: &Ext4Superblock,
-        fs: Weak<Ext4>,
+        block_group_idx: usize,
+        // fs: Weak<Ext4>,
     ) -> Result<Self> {
-
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
         let dsc_per_block = dsc_cnt;
         let dsc_id = block_group_idx / dsc_cnt;
         let first_meta_bg = super_block.first_meta_bg;
         let first_data_block = super_block.first_data_block;
-    
+
         let block_id = first_data_block as usize + dsc_id + 1;
         let offset = (block_group_idx % dsc_cnt) * super_block.desc_size as usize;
 
         let data = block_device.read_offset(block_id * BLOCK_SIZE);
 
-        let block_group_data = &data[offset as usize..offset as usize + size_of::<Ext4BlockGroup>()];
+        let block_group_data =
+            &data[offset as usize..offset as usize + size_of::<Ext4BlockGroup>()];
 
         let bg = Ext4BlockGroup::try_from(block_group_data);
         bg
