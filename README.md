@@ -51,9 +51,8 @@ impl Ext4Traits for Ext4TraitsImpl{
 ```
 
 
-
-```write test
+# write test
+```sh
 sh gen_write_img.sh
 cargo test
-
 ```
