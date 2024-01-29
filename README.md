@@ -27,6 +27,18 @@ impl Ext4Traits for Ext4TraitsImpl{
         let r = file.read_exact(&mut buf);
         buf
     }
+    fn write_block(offset: u64, buf: &[u8]) {]
+        use std::fs::OpenOptions;
+        use std::io::{Read, Seek, Write};
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("ex4.img")
+            .unwrap();
+    
+        let r = file.seek(std::io::SeekFrom::Start(offset));
+        let r = file.write_all(&buf);
+    }
 }
     
     let mp = Ext4MountPoint::new("/");
@@ -35,5 +47,13 @@ impl Ext4Traits for Ext4TraitsImpl{
     
     ext4_generic_open::<Ext4TraitsImpl>( &mut ext4_file, path);
     ext4_file_read::<Ext4TraitsImpl>( &mut ext4_file);
+
+```
+
+
+
+```write test
+sh gen_write_img.sh
+cargo test
 
 ```
