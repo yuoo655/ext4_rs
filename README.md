@@ -3,6 +3,7 @@
 # read example
 
 ```sh
+git checkout dev
 python3 gen_test_files.py
 sh gen_img.sh
 cargo run
