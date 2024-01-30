@@ -1,3 +1,22 @@
-# 此为重构分支
+# rust ext4 crate no std
 
-参考 https://github.com/asterinas/asterinas/tree/main/services/libs/aster-std/src/fs/ext2
+# read example
+
+```sh
+python3 gen_test_files.py
+sh gen_img.sh
+cargo run
+```
+
+# write example (code is in the process of refactoring)
+
+```sh
+git checkout write_dev
+sh gen_write_img.sh
+cargo test test_write
+```
+
+
+
+
+
