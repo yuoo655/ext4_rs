@@ -366,7 +366,7 @@ pub fn ext4_dir_find_entry(
         iblock += 1
     }
 
-    ENOENT
+    0
 }
 
 pub fn ext4_extent_get_blocks(
