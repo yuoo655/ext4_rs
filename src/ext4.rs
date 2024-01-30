@@ -23,10 +23,6 @@ pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath, block: u32) -> bool {
     let eh = unsafe { &*path.header };
 
     if eh.entries_count == 0 {
-        /*
-         * this leaf is empty:
-         * we get such a leaf in split/add case
-         */
         false;
     }
 
@@ -90,7 +86,7 @@ impl Ext4 {
         let raw_data = block_device.read_offset(BASE_OFFSET);
         let super_block = Ext4Superblock::try_from(raw_data).unwrap();
 
-        println!("super_block: {:x?}", super_block);
+        // println!("super_block: {:x?}", super_block);
         let inodes_per_group = super_block.inodes_per_group();
         let blocks_per_group = super_block.blocks_per_group();
         let inode_size = super_block.inode_size();
@@ -192,7 +188,6 @@ impl Ext4 {
         };
         let mut de = Ext4DirEntry::default();
         let mut dir_search_result = Ext4DirSearchResult::new(ext4_blk, de);
-        let path_skip_mount = ext4_path_skip(path, core::str::from_utf8(mp_name).unwrap());
 
         file.flags = iflags;
 
@@ -203,16 +198,20 @@ impl Ext4 {
             parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
         }
 
-        let mut len = ext4_path_check(path_skip_mount, &mut is_goal);
-
-        let mut serach_path = path_skip_mount;
-
+        // let path_skip_mount = ext4_path_skip(path, core::str::from_utf8(mp_name).unwrap());
+        // let mut len = ext4_path_check(path_skip_mount, &mut is_goal);
+        // let mut search_path = path_skip_mount;
+        let mut search_path = ext4_path_skip(&path, ".");
+        let mut len = 0;
         loop {
-            len = ext4_path_check(&serach_path, &mut is_goal);
+            search_path = ext4_path_skip(search_path, "/");
+            len = ext4_path_check(search_path, &mut is_goal);
+
+            // println!("search_path {:?} len {:?} is_goal {:?}", search_path, len, is_goal);
 
             let r = ext4_dir_find_entry(
                 &mut root_inode_ref,
-                serach_path,
+                &search_path[..len as usize],
                 len as u32,
                 &mut dir_search_result,
             );
@@ -239,14 +238,55 @@ impl Ext4 {
                 ext4_fs_put_inode_ref(&mut child_inode_ref);
             }
 
-            
+            let name = get_name(
+                dir_search_result.dentry.name,
+                dir_search_result.dentry.name_len as usize,
+            )
+            .unwrap();
+
+            println!("find de name{:?}", name);
+
             if is_goal {
                 file.inode = dir_search_result.dentry.inode;
                 return;
-            }else{
-                serach_path = &serach_path[len..];
+            } else {
+                search_path = &search_path[len..];
             }
         }
+    }
+
+    pub fn ext4_file_read(&self, ext4_file: &mut Ext4File) -> Vec<u8> {
+        // 创建一个空的向量，用于存储文件的内容
+        let mut file_data: Vec<u8> = Vec::new();
+
+        // 创建一个空的向量，用于存储文件的所有extent信息
+        let mut extents: Vec<Ext4Extent> = Vec::new();
+
+        let super_block = &self.super_block;
+
+        let inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
+
+        ext4_find_all_extent(&inode_ref, &mut extents);
+
+        // 遍历extents向量，对每个extent，计算它的物理块号，然后调用read_block函数来读取数据块，并将结果追加到file_data向量中
+        for extent in extents {
+            // 获取extent的起始块号、块数和逻辑块号
+            let start_block = extent.start_lo as u64 | ((extent.start_hi as u64) << 32);
+            let block_count = extent.block_count as u64;
+            let logical_block = extent.first_block as u64;
+            // 计算extent的物理块号
+            let physical_block = start_block + logical_block;
+            // 从file中读取extent的所有数据块，并将结果追加到file_data向量中
+            for i in 0..block_count {
+                let block_num = physical_block + i;
+                let block_data = inode_ref
+                    .fs()
+                    .block_device
+                    .read_offset(block_num as usize * BLOCK_SIZE);
+                file_data.extend(block_data);
+            }
+        }
+        file_data
     }
 }
 
@@ -282,7 +322,10 @@ pub fn ext4_dir_find_entry(
         ext4_fs_get_inode_dblk_idx(parent, iblock, &mut fblock, false);
 
         // load_block
-        let mut data = parent.fs().block_device.read_offset(fblock as usize);
+        let mut data = parent
+            .fs()
+            .block_device
+            .read_offset(fblock as usize * BLOCK_SIZE);
         let mut ext4_block = Ext4Block {
             logical_block_id: iblock,
             disk_block_id: fblock,
@@ -329,8 +372,53 @@ pub fn ext4_extent_get_blocks(
     if iblock >= ee_block && iblock <= (ee_block + ee_len as u32) {
         let newblock = iblock - ee_block + ee_start;
         *result = newblock as u64;
-
         return;
+    }
+}
+
+pub fn ext4_find_all_extent(inode_ref: &Ext4InodeRef, extents: &mut Vec<Ext4Extent>) {
+    let extent_header = Ext4ExtentHeader::try_from(&inode_ref.inner.inode.block[..2]).unwrap();
+    let data = &inode_ref.inner.inode.block;
+    let depth = extent_header.depth;
+
+    ext4_add_extent(inode_ref, depth, data, extents, true);
+}
+
+pub fn ext4_add_extent(
+    inode_ref: &Ext4InodeRef,
+    depth: u16,
+    data: &[u32],
+    extents: &mut Vec<Ext4Extent>,
+    first_level: bool,
+) {
+    let extent_header = Ext4ExtentHeader::try_from(data).unwrap();
+    let extent_entries = extent_header.entries_count;
+    if depth == 0 {
+        for en in 0..extent_entries {
+            let idx = (3 + en * 3) as usize;
+            let extent = Ext4Extent::try_from(&data[idx..]).unwrap();
+
+            extents.push(extent)
+        }
+        return;
+    }
+
+    for en in 0..extent_entries {
+        let idx = (3 + en * 3) as usize;
+        if idx == 12 {
+            break;
+        }
+        let extent_index = Ext4ExtentIndex::try_from(&data[idx..]).unwrap();
+        let ei_leaf_lo = extent_index.leaf_lo;
+        let ei_leaf_hi = extent_index.leaf_hi;
+        let mut block = ei_leaf_lo;
+        block |= ((ei_leaf_hi as u32) << 31) << 1;
+        let data = inode_ref
+            .fs()
+            .block_device
+            .read_offset(block as usize * BLOCK_SIZE);
+        let data: Vec<u32> = unsafe { core::mem::transmute(data) };
+        ext4_add_extent(inode_ref, depth - 1, &data, extents, false);
     }
 }
 
@@ -342,7 +430,8 @@ pub fn ext4_find_extent(
 ) {
     let eh = &inode.block as *const [u32; 15] as *const Ext4ExtentHeader;
 
-    let extent_header = Ext4ExtentHeader::try_from(&inode.block[..2]).unwrap();
+    // println!("ext4_find_extent header {:x?}", unsafe{*eh});
+    let extent_header = Ext4ExtentHeader::try_from(&inode.block[..]).unwrap();
 
     let depth = extent_header.depth;
 
@@ -351,11 +440,14 @@ pub fn ext4_find_extent(
     extent_path.header = eh;
 
     // depth = 0
-    ext4_ext_binsearch(&mut extent_path, iblock);
+    let r = ext4_ext_binsearch(&mut extent_path, iblock);
+    // println!("ext4_find_extent r {:x?}", r);
+
     let extent = unsafe { *extent_path.extent };
     let pblock = extent.start_lo | (((extent.start_hi as u32) << 31) << 1);
     extent_path.p_block = pblock;
 
+    // println!("ext4_find_extent extent {:x?}", extent);
     v.push(extent_path);
 }
 
@@ -402,10 +494,10 @@ pub fn ext4_dir_find_in_block(
         if let Ok(s) = s {
             if name_len == de.name_len as u32 {
                 if name.to_string() == s {
-                    println!(
-                        "found s {:?}  name_len {:x?} de.name_len {:x?}",
-                        s, name_len, de.name_len
-                    );
+                    // println!(
+                    //     "found s {:?}  name_len {:x?} de.name_len {:x?}",
+                    //     s, name_len, de.name_len
+                    // );
                     result.dentry = de;
                     return true;
                 }

@@ -607,6 +607,14 @@ pub struct Ext4ExtentIndex {
     pub padding: u16,
 }
 
+impl <T> TryFrom<&[T]> for Ext4ExtentIndex {
+    type Error = u64;
+    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
+        let data = &data[..size_of::<Ext4ExtentIndex>()];
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Ext4Extent {
@@ -627,6 +635,15 @@ pub struct Ext4Extent {
     /// Lower 32-bits of the block number to which this extent points.
     pub start_lo: u32,
 }
+
+impl <T> TryFrom<&[T]> for Ext4Extent {
+    type Error = u64;
+    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
+        let data = &data[..size_of::<Ext4Extent>()];
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+    }
+}
+
 
 /// fake dir entry
 pub struct Ext4FakeDirEntry {
@@ -926,7 +943,7 @@ impl Default for Ext4DirEntry {
 impl TryFrom<&[u8]> for Ext4DirEntry {
     type Error = u64;
     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<Ext4DirEntry>()];
+        let data = data;
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }

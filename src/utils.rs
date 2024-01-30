@@ -152,6 +152,16 @@ pub fn ext4_path_skip<'a>(path:&'a str, skip: &str) -> &'a str{
     path
 }
 
+// pub fn ext4_path_skip_dot(path: &str) -> &str {
+//     let path_skip_dot = path.trim_start_matches(".");
+//     path_skip_dot
+// }
+
+// pub fn ext4_path_skip_slash(path: &str) -> &str {
+//     let path_skip_slash = path.trim_start_matches("/");
+//     path_skip_slash
+// }
+
 pub fn ext4_path_check(path:&str, is_goal:&mut bool) -> usize{
     for (i, c) in path.chars().enumerate() {
         if c == '/' {
@@ -173,3 +183,4 @@ pub fn get_name(name: [u8; 255], len: usize) -> Result<String, alloc::string::Fr
     let s = String::from_utf8(v);
     s
 }
+

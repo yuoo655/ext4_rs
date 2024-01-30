@@ -10,35 +10,30 @@ use core::mem::size_of;
 use core::str;
 use core::*;
 
-mod prelude;
-mod ext4_defs;
-mod ext4;
 mod consts;
-mod utils;
 mod cstr;
+mod ext4;
+mod ext4_defs;
 mod ext4_error;
+mod prelude;
+mod utils;
 
+pub use consts::*;
+pub use cstr::*;
+pub use ext4::*;
+pub use ext4_defs::*;
 pub use ext4_error::*;
 pub use prelude::*;
-pub use ext4_defs::*;
-pub use ext4::*;
-pub use consts::*;
 pub use utils::*;
-pub use cstr::*;
-
 
 // use lock::Mutex;
 // use lock::MutexGuard;
 
-
-
-
 #[derive(Debug)]
-pub struct Disk {
-}
+pub struct Disk {}
 
 impl BlockDevice for Disk {
-    fn read_offset(&self, offset: usize) -> Vec<u8>{
+    fn read_offset(&self, offset: usize) -> Vec<u8> {
         // println!("read_offset: {:x?}", offset);
         use std::fs::OpenOptions;
         use std::io::{Read, Seek};
@@ -54,7 +49,7 @@ impl BlockDevice for Disk {
         buf
     }
 
-    fn write_offset(&self, offset: usize, data:&[u8]){
+    fn write_offset(&self, offset: usize, data: &[u8]) {
         use std::fs::OpenOptions;
         use std::io::{Read, Seek, Write};
         let mut file = OpenOptions::new()
@@ -69,9 +64,13 @@ impl BlockDevice for Disk {
 }
 
 pub fn main() {
-
-
-    let disk = Arc::new(Disk{});
+    let disk = Arc::new(Disk {});
     let ext4 = Ext4::open(disk);
-    
+
+    let path =
+        "/dirtest1/dirtest2/../../dirtest1/dirtest2/dirtest3/dirtest4/dirtest5/../dirtest5/2.txt";
+    let mut ext4_file = Ext4File::new();
+    ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    let data = ext4.ext4_file_read(&mut ext4_file);
+    println!("data sample {:x?}", &data[0..10])
 }
