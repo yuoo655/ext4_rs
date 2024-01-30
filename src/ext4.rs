@@ -236,8 +236,15 @@ impl Ext4 {
                     /*Fail. Free new inode.*/
                     break;
                 }
-
                 ext4_fs_put_inode_ref(&mut child_inode_ref);
+            }
+
+            
+            if is_goal {
+                file.inode = dir_search_result.dentry.inode;
+                return;
+            }else{
+                serach_path = &serach_path[len..];
             }
         }
     }
@@ -399,14 +406,7 @@ pub fn ext4_dir_find_in_block(
                         "found s {:?}  name_len {:x?} de.name_len {:x?}",
                         s, name_len, de.name_len
                     );
-                    result.dentry.entry_len = de.entry_len;
-                    result.dentry.name = de.name;
-                    result.dentry.name_len = de.name_len;
-                    unsafe {
-                        result.dentry.inner.name_length_high = de.inner.name_length_high;
-                    }
-                    result.dentry.inode = de.inode;
-
+                    result.dentry = de;
                     return true;
                 }
             }
