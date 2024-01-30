@@ -74,6 +74,7 @@ pub struct Ext4 {
     pub inodes_per_group: u32,
     pub blocks_per_group: u32,
     pub inode_size: usize,
+    pub last_inode_bg_id: u32,
     pub self_ref: Weak<Self>,
     pub mount_point: Ext4MountPoint,
 }
@@ -115,6 +116,7 @@ impl Ext4 {
             block_device,
             self_ref: weak_ref.clone(),
             mount_point: mount_point,
+            last_inode_bg_id: 0,
         });
 
         ext4
@@ -198,9 +200,7 @@ impl Ext4 {
             parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
         }
 
-        // let path_skip_mount = ext4_path_skip(path, core::str::from_utf8(mp_name).unwrap());
-        // let mut len = ext4_path_check(path_skip_mount, &mut is_goal);
-        // let mut search_path = path_skip_mount;
+        // search dir
         let mut search_path = ext4_path_skip(&path, ".");
         let mut len = 0;
         loop {
@@ -219,9 +219,22 @@ impl Ext4 {
             if r != EOK {
                 ext4_dir_destroy_result();
 
+                if r != ENOENT {
+                    break;
+                }
+
+                if (iflags & O_CREAT) != 1 {
+                    break;
+                }
+
                 let mut child_inode_ref = Ext4InodeRef::new(self.self_ref.clone());
 
-                let r = ext4_fs_alloc_inode(&mut child_inode_ref);
+                let mut r;
+                if is_goal {
+                    r = ext4_fs_alloc_inode(&mut child_inode_ref, ftype);
+                } else {
+                    r = ext4_fs_alloc_inode(&mut child_inode_ref, DirEntryType::EXT4_DE_DIR.bits())
+                }
 
                 if r != EOK {
                     break;
@@ -288,6 +301,8 @@ impl Ext4 {
         }
         file_data
     }
+
+    pub fn ext4_file_write(&self, ext4_file: &mut Ext4File, data: &[u8], size: usize) {}
 }
 
 pub fn ext4_fs_put_inode_ref(inode_ref: &mut Ext4InodeRef) {
@@ -300,7 +315,16 @@ pub fn ext4_link() -> usize {
 
 pub fn ext4_fs_inode_blocks_init(inode_ref: &mut Ext4InodeRef) {}
 
-pub fn ext4_fs_alloc_inode(child_inode_ref: &mut Ext4InodeRef) -> usize {
+pub fn ext4_fs_alloc_inode(child_inode_ref: &mut Ext4InodeRef, filetype: u8) -> usize {
+    let mut is_dir = false;
+
+    let inode_size = child_inode_ref.fs().super_block.inode_size();
+
+    is_dir = filetype == DirEntryType::EXT4_DE_DIR.bits();
+
+    let mut index = 0;
+    let rc = ext4_ialloc_alloc_inode(child_inode_ref.fs(), &mut index, is_dir);
+
     0
 }
 pub fn ext4_dir_destroy_result() {}
@@ -342,7 +366,7 @@ pub fn ext4_dir_find_entry(
         iblock += 1
     }
 
-    0
+    ENOENT
 }
 
 pub fn ext4_extent_get_blocks(
@@ -506,4 +530,85 @@ pub fn ext4_dir_find_in_block(
     }
 
     false
+}
+
+pub fn ext4_ialloc_alloc_inode(fs: Arc<Ext4>, index: &mut u32, is_dir: bool) {
+    let mut bgid = fs.last_inode_bg_id;
+    let bg_count = fs.super_block.block_groups_count();
+
+
+    while bgid <= bg_count {
+        if bgid == bg_count {
+            bgid = 0;
+            continue;
+        }
+
+        let block_device = fs.block_device.clone();
+        let super_block = fs.super_block.clone();
+
+        let mut bg =
+            Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
+
+        let mut free_inodes = bg.get_free_inodes_count();
+        let mut used_dirs = bg.get_used_dirs_count(&super_block);
+
+        if free_inodes > 0 {
+            let inode_bitmap_block = bg.get_inode_bitmap_block(&super_block);
+
+            let mut raw_data = fs
+                .block_device
+                .read_offset(inode_bitmap_block as usize * BLOCK_SIZE);
+
+            let inodes_in_bg = super_block.get_inodes_in_group_cnt(bgid);
+
+            let bitmap_size: u32 = inodes_in_bg / 0x8;
+
+            let bitmap_data = &mut raw_data[..bitmap_size as usize];
+
+            let mut idx_in_bg = 0 as u32;
+
+            ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);
+            ext4_bmap_bit_set(&mut raw_data, idx_in_bg);
+
+            bg.set_block_group_ialloc_bitmap_csum(&super_block, &raw_data);
+
+            /* Modify filesystem counters */
+            free_inodes -= 1;
+            bg.set_free_inodes_count(&super_block, free_inodes);
+
+
+            
+			/* Increment used directories counter */
+			if is_dir {
+				used_dirs += 1;
+				bg.set_used_dirs_count(&super_block, used_dirs);
+			}
+
+            /* Decrease unused inodes count */
+            let mut unused = bg.get_itable_unused(&super_block);
+            let free = inodes_in_bg - unused as u32;
+            if idx_in_bg >= free {
+                unused = inodes_in_bg - (idx_in_bg + 1);
+                bg.set_itable_unused(&super_block, unused);
+            }
+
+            bg.sync_to_disk_with_csum(block_device.clone(), bgid as usize, &super_block);
+            // bg.sync_block_group_to_disk(block_device.clone(), bgid as usize, &super_block);
+
+            /* Update superblock */
+            let mut s = super_block.clone();
+            s.decrease_free_inodes_count();
+            s.sync_super_block_to_disk(block_device.clone());
+
+            /* Compute the absolute i-nodex number */
+            let inodes_per_group = s.inodes_per_group();
+            let inode_num = bgid * inodes_per_group + (idx_in_bg + 1);
+            *index = inode_num;
+
+            return;
+        }
+
+        bgid += 1;
+    }
+    println!("no free inode");
 }

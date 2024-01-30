@@ -39,7 +39,40 @@ pub const O_PATH: u32 = 0o10000000;
 pub const O_DSYNC: u32 = 0o010000;
 
 
-
+pub const EPERM: usize = 		 1; 	/* Operation not permitted */
+pub const ENOENT: usize = 		 2; 	/* No such file or directory */
+pub const ESRCH: usize = 		 3; 	/* No such process */
+pub const EINTR: usize = 		 4; 	/* Interrupted system call */
+pub const EIO: usize = 		 5; 	/* I/O error */
+pub const ENXIO: usize = 		 6; 	/* No such device or address */
+pub const E2BIG: usize = 		 7; 	/* Argument list too long */
+pub const ENOEXEC: usize = 		 8; 	/* Exec format error */
+pub const EBADF: usize = 		 9; 	/* Bad file number */
+pub const ECHILD: usize = 		10; 	/* No child processes */
+pub const EAGAIN: usize = 		11; 	/* Try again */
+pub const ENOMEM: usize = 		12; 	/* Out of memory */
+pub const EACCES: usize = 		13; 	/* Permission denied */
+pub const EFAULT: usize = 		14; 	/* Bad address */
+pub const ENOTBLK: usize = 		15; 	/* Block device required */
+pub const EBUSY: usize = 		16; 	/* Device or resource busy */
+pub const EEXIST: usize = 		17; 	/* File exists */
+pub const EXDEV: usize = 		18; 	/* Cross-device link */
+pub const ENODEV: usize = 		19; 	/* No such device */
+pub const ENOTDIR: usize = 		20; 	/* Not a directory */
+pub const EISDIR: usize = 		21; 	/* Is a directory */
+pub const EINVAL: usize = 		22; 	/* Invalid argument */
+pub const ENFILE: usize = 		23; 	/* File table overflow */
+pub const EMFILE: usize = 		24; 	/* Too many open files */
+pub const ENOTTY: usize = 		25; 	/* Not a typewriter */
+pub const ETXTBSY: usize = 		26; 	/* Text file busy */
+pub const EFBIG: usize = 		27; 	/* File too large */
+pub const ENOSPC: usize = 		28; 	/* No space left on device */
+pub const ESPIPE: usize = 		29; 	/* Illegal seek */
+pub const EROFS: usize = 		30; 	/* Read-only file system */
+pub const EMLINK: usize = 		31; 	/* Too many links */
+pub const EPIPE: usize = 		32; 	/* Broken pipe */
+pub const EDOM: usize = 		33; 	/* Math argument out of domain of func */
+pub const ERANGE: usize = 		34; 	/* Math result not representable */
 
 bitflags! {
     pub struct OFlag: u32 {

@@ -146,17 +146,15 @@ impl TryFrom<Vec<u8>> for Ext4Superblock {
     fn try_from(value: Vec<u8>) -> core::result::Result<Self, u64> {
         let data = &value[..size_of::<Ext4Superblock>()];
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-        
     }
 }
 
 impl Ext4Superblock {
-    pub fn sync_super_block_to_disk(&self, block_device: &dyn BlockDevice) -> Result<()> {
+    pub fn sync_super_block_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
         };
         block_device.write_offset(BASE_OFFSET, data);
-        Ok(())
     }
 }
 
@@ -182,7 +180,8 @@ impl Ext4Superblock {
 
     /// Returns the number of block groups.
     pub fn block_groups_count(&self) -> u32 {
-        ((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo / self.blocks_per_group
+        (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
+            / self.blocks_per_group
     }
 
     pub fn desc_size(&self) -> u16 {
@@ -194,6 +193,29 @@ impl Ext4Superblock {
             size
         }
     }
+
+    pub fn get_inodes_in_group_cnt(&self, bgid: u32) -> u32 {
+        let block_group_count = self.block_groups_count();
+        let inodes_per_group = self.inodes_per_group;
+
+        let total_inodes = ((self.inodes_count as u64) << 32) as u32;
+        if bgid < block_group_count - 1 {
+            inodes_per_group
+        } else {
+            total_inodes - ((block_group_count - 1) * inodes_per_group)
+        }
+    }
+
+    pub fn decrease_free_inodes_count(&mut self) {
+        self.free_inodes_count -= 1;
+    }
+
+    // pub fn sync_super_block_to_disk(&self, block_device: Arc<dyn BlockDevice>){
+    //     let data = unsafe {
+    //         core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
+    //     };
+    //     block_device.write_offset(BASE_OFFSET, data);
+    // }
 }
 
 #[repr(C)]
@@ -244,7 +266,6 @@ impl TryFrom<&[u8]> for Ext4Inode {
     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
         let data = &data[..size_of::<Ext4Inode>()];
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
-        
     }
 }
 
@@ -454,20 +475,70 @@ impl TryFrom<&[u8]> for Ext4BlockGroup {
 }
 
 impl Ext4BlockGroup {
+    pub fn get_inode_bitmap_block(&self, s: &Ext4Superblock) -> u64 {
+        let mut v = self.inode_bitmap_lo as u64;
+        let desc_size = s.desc_size;
+        if desc_size > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            v |= (self.inode_bitmap_hi as u64) << 32;
+        }
+        v
+    }
+
+    pub fn get_itable_unused(&mut self, s: &Ext4Superblock) -> u32 {
+        let mut v = self.itable_unused_lo as u32;
+        if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            v |= ((self.itable_unused_hi as u64) << 32) as u32;
+        }
+        v
+    }
+
+    pub fn get_used_dirs_count(&self, s: &Ext4Superblock) -> u32 {
+        let mut v = self.used_dirs_count_lo as u32;
+        if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            v |= ((self.used_dirs_count_hi as u64) << 32) as u32;
+        }
+        v
+    }
+
+    pub fn set_used_dirs_count(&mut self, s: &Ext4Superblock, cnt: u32){
+        self.itable_unused_lo = ((cnt << 16) >> 16) as u16;
+        if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            self.itable_unused_hi = (cnt >> 16) as u16;
+        }
+    }
+
+    pub fn set_itable_unused(&mut self, s: &Ext4Superblock, cnt: u32) {
+        self.itable_unused_lo = ((cnt << 16) >> 16) as u16;
+        if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            self.itable_unused_hi = (cnt >> 16) as u16;
+        }
+    }
+
+    pub fn set_free_inodes_count(&mut self, s: &Ext4Superblock, cnt: u32) {
+        self.free_inodes_count_lo = ((cnt << 16) >> 16) as u16;
+        if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            self.free_inodes_count_hi = (cnt >> 16) as u16;
+        }
+    }
+
+    pub fn get_free_inodes_count(&self) -> u32 {
+        ((self.free_inodes_count_hi as u64) << 32) as u32 | self.free_inodes_count_lo as u32
+    }
+
     pub fn get_inode_table_blk_num(&self) -> u32 {
         ((self.inode_table_first_block_hi as u64) << 32) as u32 | self.inode_table_first_block_lo
     }
 
     pub fn sync_block_group_to_disk(
         &self,
-        block_device: &dyn BlockDevice,
+        block_device: Arc<dyn BlockDevice>,
         bgid: usize,
         super_block: &Ext4Superblock,
-    ) -> Result<()> {
+    ) {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
-        let dsc_per_block = dsc_cnt;
+        // let dsc_per_block = dsc_cnt;
         let dsc_id = bgid / dsc_cnt;
-        let first_meta_bg = super_block.first_meta_bg;
+        // let first_meta_bg = super_block.first_meta_bg;
         let first_data_block = super_block.first_data_block;
         let block_id = first_data_block as usize + dsc_id + 1;
         let offset = (bgid % dsc_cnt) * super_block.desc_size as usize;
@@ -476,7 +547,6 @@ impl Ext4BlockGroup {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroup>())
         };
         block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
-        Ok(())
     }
 
     pub fn get_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
@@ -521,12 +591,28 @@ impl Ext4BlockGroup {
 
     pub fn sync_to_disk_with_csum(
         &mut self,
-        block_device: &dyn BlockDevice,
+        block_device: Arc<dyn BlockDevice>,
         bgid: usize,
         super_block: &Ext4Superblock,
-    ) -> Result<()> {
+    ) {
         self.set_block_group_checksum(bgid as u32, super_block);
         self.sync_block_group_to_disk(block_device, bgid, super_block)
+    }
+
+    pub fn set_block_group_ialloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
+        let desc_size = s.desc_size();
+
+        let csum = ext4_ialloc_bitmap_csum(bitmap, s);
+        let lo_csum = (csum & 0xFFFF).to_le();
+        let hi_csum = (csum >> 16).to_le();
+
+        if (s.features_read_only & 0x400) >> 10 == 0 {
+            return;
+        }
+        self.inode_bitmap_csum_lo = lo_csum as u16;
+        if desc_size == EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            self.inode_bitmap_csum_hi = hi_csum as u16;
+        }
     }
 }
 
@@ -538,9 +624,7 @@ impl Ext4BlockGroup {
         // fs: Weak<Ext4>,
     ) -> core::result::Result<Self, u64> {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
-        let dsc_per_block = dsc_cnt;
         let dsc_id = block_group_idx / dsc_cnt;
-        let first_meta_bg = super_block.first_meta_bg;
         let first_data_block = super_block.first_data_block;
 
         let block_id = first_data_block as usize + dsc_id + 1;
@@ -581,8 +665,7 @@ pub struct Ext4ExtentHeader {
     pub generation: u32,
 }
 
-
-impl <T> TryFrom<&[T]> for Ext4ExtentHeader {
+impl<T> TryFrom<&[T]> for Ext4ExtentHeader {
     type Error = u64;
     fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
         let data = data;
@@ -607,7 +690,7 @@ pub struct Ext4ExtentIndex {
     pub padding: u16,
 }
 
-impl <T> TryFrom<&[T]> for Ext4ExtentIndex {
+impl<T> TryFrom<&[T]> for Ext4ExtentIndex {
     type Error = u64;
     fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
         let data = &data[..size_of::<Ext4ExtentIndex>()];
@@ -636,14 +719,13 @@ pub struct Ext4Extent {
     pub start_lo: u32,
 }
 
-impl <T> TryFrom<&[T]> for Ext4Extent {
+impl<T> TryFrom<&[T]> for Ext4Extent {
     type Error = u64;
     fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
         let data = &data[..size_of::<Ext4Extent>()];
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }
-
 
 /// fake dir entry
 pub struct Ext4FakeDirEntry {
@@ -786,7 +868,6 @@ impl Default for Ext4ExtentPath {
     }
 }
 
-
 pub struct Ext4InodeRef {
     pub inode_num: u32,
     pub inner: Inner,
@@ -794,8 +875,7 @@ pub struct Ext4InodeRef {
 }
 
 impl Ext4InodeRef {
-    pub fn new(fs: Weak<Ext4>) -> Self{
-
+    pub fn new(fs: Weak<Ext4>) -> Self {
         let inner = Inner {
             inode: Ext4Inode::default(),
             weak_self: Weak::new(),
@@ -815,7 +895,6 @@ impl Ext4InodeRef {
     }
 
     pub fn get_inode_ref(fs: Weak<Ext4>, inode_num: u32) -> Self {
-
         let fs_clone = fs.clone();
 
         let fs = fs.upgrade().unwrap();
@@ -827,12 +906,13 @@ impl Ext4InodeRef {
         let index = (inode_num - 1) % inodes_per_group;
         let group = fs.block_groups[group as usize];
         let inode_table_blk_num = group.get_inode_table_blk_num();
-        let offset = inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize;
+        let offset =
+            inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize;
 
         let mut data = fs.block_device.read_offset(offset);
         let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
         let inode = Ext4Inode::try_from(inode_data).unwrap();
-        
+
         let inner = Inner {
             inode,
             weak_self: Weak::new(),
@@ -840,11 +920,10 @@ impl Ext4InodeRef {
         let inode = Self {
             inode_num,
             inner,
-            fs:fs_clone,
+            fs: fs_clone,
         };
 
         inode
-
     }
 }
 
@@ -864,7 +943,9 @@ impl Inner {
         let block_device = fs.block_device.clone();
         let super_block = fs.super_block.clone();
         let inode_id = weak_inode_ref.inode_num;
-        self.inode.sync_inode_to_disk_with_csum(block_device, &super_block, inode_id).unwrap()
+        self.inode
+            .sync_inode_to_disk_with_csum(block_device, &super_block, inode_id)
+            .unwrap()
     }
 }
 
@@ -925,7 +1006,7 @@ pub struct Ext4DirEntry {
     pub entry_len: u16,           // 到下一个目录项的距离
     pub name_len: u8,             // 低8位的文件名长度
     pub inner: Ext4DirEnInternal, // 联合体成员
-    pub name: [u8; 255],            // 文件名
+    pub name: [u8; 255],          // 文件名
 }
 
 impl Default for Ext4DirEntry {
@@ -962,7 +1043,7 @@ impl<'a> Ext4DirSearchResult<'a> {
 #[derive(Debug)]
 // A single block descriptor
 pub struct Ext4Block<'a> {
-    pub logical_block_id : u32, // 逻辑块号
+    pub logical_block_id: u32, // 逻辑块号
 
     // disk block id
     pub disk_block_id: u64,
@@ -1014,4 +1095,13 @@ impl core::str::FromStr for Ext4OpenFlags {
             _ => Err(format!("Unknown open mode: {}", s)),
         }
     }
+}
+
+pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
+    let mut csum = 0;
+    let inodes_per_group = s.inodes_per_group;
+    let uuid = s.uuid;
+    csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+    csum = ext4_crc32c(csum, bitmap, (inodes_per_group + 7) / 8);
+    csum
 }

@@ -67,10 +67,19 @@ pub fn main() {
     let disk = Arc::new(Disk {});
     let ext4 = Ext4::open(disk);
 
+    // read test
     let path =
         "/dirtest1/dirtest2/../../dirtest1/dirtest2/dirtest3/dirtest4/dirtest5/../dirtest5/2.txt";
     let mut ext4_file = Ext4File::new();
     ext4.ext4_open(&mut ext4_file, path, "r+", false);
     let data = ext4.ext4_file_read(&mut ext4_file);
     println!("data sample {:x?}", &data[0..10])
+
+
+    // write test
+    // let path = "11111.txt";
+    // let mut ext4_file = Ext4File::new();
+    // ext4.ext4_open(&mut ext4_file, path, "w+", false);
+
+
 }
