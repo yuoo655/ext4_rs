@@ -4,9 +4,24 @@ pub const EOK: usize = 0;
 pub type ext4_lblk_t = u32;
 pub type ext4_fsblk_t = u64;
 
+pub const EXT4_INODE_FLAG_EXTENTS: usize =  0x00080000; /* Inode uses extents */
 pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
 pub const EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 64;
 pub const EXT4_CRC32_INIT: u32 = 0xFFFFFFFF;
+pub const EXT4_EXTENT_MAGIC:u16 =  0xF30A;
+
+
+pub const EXT4_GOOD_OLD_INODE_SIZE:u16 = 	128;
+
+pub const EXT4_INODE_MODE_FIFO: usize =  0x1000;
+pub const EXT4_INODE_MODE_CHARDEV: usize =  0x2000;
+pub const EXT4_INODE_MODE_DIRECTORY: usize =  0x4000;
+pub const EXT4_INODE_MODE_BLOCKDEV: usize =  0x6000;
+pub const EXT4_INODE_MODE_FILE: usize =  0x8000;
+pub const EXT4_INODE_MODE_SOFTLINK: usize =  0xA000;
+pub const EXT4_INODE_MODE_SOCKET: usize =  0xC000;
+pub const EXT4_INODE_MODE_TYPE_MASK: u16 =  0xF000;
+
 /// Maximum bytes in a path
 pub const PATH_MAX: usize = 4096;
 
@@ -100,5 +115,19 @@ bitflags! {
         const O_PATH = 0o10000000;
         const O_DSYNC = 0o010000;
         const O_TMPFILE = 0o20000000 | Self::O_DIRECTORY.bits();
+    }
+}
+
+
+bitflags! {
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct InodeMode: u16 {
+        const S_IFSOCK = 0xC000;
+        const S_IFLNK = 0xA000;
+        const S_IFREG = 0x8000;
+        const S_IFBLK = 0x6000;
+        const S_IFDIR = 0x4000;
+        const S_IFCHR = 0x2000;
+        const S_IFIFO = 0x1000;
     }
 }

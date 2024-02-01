@@ -1,6 +1,5 @@
 use bitflags::bitflags;
 use core::mem::size_of;
-use std::fs;
 
 use super::*;
 use crate::prelude::*;
@@ -163,6 +162,31 @@ impl Ext4Superblock {
     pub fn inode_size(&self) -> u16 {
         self.inode_size
     }
+
+
+    /// Returns the size of inode structure.
+    pub fn inode_size_file(&self, inode: &Ext4Inode) -> u64 {
+
+        let mode = inode.mode;
+
+        // 获取inode的低32位大小
+        let mut v = inode.size as u64;
+        // 如果文件系统的版本号大于0，并且inode的类型是文件
+        if self.rev_level > 0 && (mode & EXT4_INODE_MODE_TYPE_MASK) == EXT4_INODE_MODE_FILE as u16 {
+            // 获取inode的高32位大小，并左移32位
+            let hi = (inode.size_hi as u64) << 32;
+            // 用或运算符将低32位和高32位拼接为一个u64值
+            v |= hi;
+        }
+
+        // 返回inode的大小
+        v
+    }
+
+    pub fn free_inodes_count(&self) -> u32 {
+        self.free_inodes_count
+    }
+
     /// Returns total number of inodes.
     pub fn total_inodes(&self) -> u32 {
         self.inodes_count
@@ -171,6 +195,11 @@ impl Ext4Superblock {
     /// Returns the number of blocks in each block group.
     pub fn blocks_per_group(&self) -> u32 {
         self.blocks_per_group
+    }
+
+    /// Returns the size of block.
+    pub fn block_size(&self) -> u32 {
+        1024 << self.log_block_size
     }
 
     /// Returns the number of inodes in each block group.
@@ -192,6 +221,10 @@ impl Ext4Superblock {
         } else {
             size
         }
+    }
+
+    pub fn extra_size(&self) -> u16{
+        self.want_extra_isize
     }
 
     pub fn get_inodes_in_group_cnt(&self, bgid: u32) -> u32 {
@@ -270,6 +303,13 @@ impl TryFrom<&[u8]> for Ext4Inode {
 }
 
 impl Ext4Inode {
+    pub fn ext4_get_inode_flags(&self) -> u32 {
+        self.flags
+    }
+    pub fn ext4_get_inode_mode(&self) -> u16 {
+        self.mode
+    }
+
     pub fn ext4_inode_set_flags(&mut self, f: u32) {
         self.flags |= f;
     }
@@ -318,6 +358,10 @@ impl Ext4Inode {
         self.generation = generation;
     }
 
+    pub fn ext4_inode_set_extra_isize(&mut self, extra_isize: u16) {
+        self.i_extra_isize = extra_isize;
+    }
+
     fn get_checksum(&self, super_block: &Ext4Superblock) -> u32 {
         let inode_size = super_block.inode_size;
         let mut v: u32 = self.osd2.l_i_checksum_lo as u32;
@@ -340,6 +384,87 @@ impl Ext4Inode {
             self.i_checksum_hi = (checksum >> 16) as u16;
         }
     }
+
+    pub fn ext4_inode_get_extent_header(&mut self) -> *mut Ext4ExtentHeader {
+        let header_ptr = (&mut self.block) as *mut [u32; 15] as *mut Ext4ExtentHeader;
+        header_ptr
+    }
+
+    pub fn ext4_extent_tree_init(&mut self){
+        let mut header = Ext4ExtentHeader::default();
+        header.ext4_extent_header_set_depth(0);
+        header.ext4_extent_header_set_entries_count(0);
+        header.ext4_extent_header_set_generation(0);
+        header.ext4_extent_header_set_magic();
+        header.ext4_extent_header_set_max_entries_count(4 as u16);
+
+        unsafe {
+            let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
+            let array_ptr = &mut self.block as *mut [u32; 15] as *mut u32;
+            core::ptr::copy_nonoverlapping(header_ptr, array_ptr, 3);
+        }
+    }
+}
+
+
+// 获取extent header的魔数
+#[inline]
+pub fn ext4_extent_header_get_magic(header: &Ext4ExtentHeader) -> u16 {
+    header.magic
+}
+
+// 设置extent header的魔数
+#[inline]
+pub fn ext4_extent_header_set_magic(header: &mut Ext4ExtentHeader, magic: u16) {
+    header.magic = magic;
+}
+
+// 获取extent header的条目数
+#[inline]
+pub fn ext4_extent_header_get_entries_count(header: &Ext4ExtentHeader) -> u16 {
+    header.entries_count
+}
+
+// 设置extent header的条目数
+#[inline]
+pub fn ext4_extent_header_set_entries_count(header: &mut Ext4ExtentHeader, count: u16) {
+    header.entries_count = count;
+}
+
+// 获取extent header的最大条目数
+#[inline]
+pub fn ext4_extent_header_get_max_entries_count(header: &Ext4ExtentHeader) -> u16 {
+    header.max_entries_count
+}
+
+// 设置extent header的最大条目数
+#[inline]
+pub fn ext4_extent_header_set_max_entries_count(header: &mut Ext4ExtentHeader, max_count: u16) {
+    header.max_entries_count = max_count;
+}
+
+// 获取extent header的深度
+#[inline]
+pub fn ext4_extent_header_get_depth(header: &Ext4ExtentHeader) -> u16 {
+    header.depth
+}
+
+// 设置extent header的深度
+#[inline]
+pub fn ext4_extent_header_set_depth(header: &mut Ext4ExtentHeader, depth: u16) {
+    header.depth = depth;
+}
+
+// 获取extent header的生成号
+#[inline]
+pub fn ext4_extent_header_get_generation(header: &Ext4ExtentHeader) -> u32 {
+    header.generation
+}
+
+// 设置extent header的生成号
+#[inline]
+pub fn ext4_extent_header_set_generation(header: &mut Ext4ExtentHeader, generation: u32) {
+    header.generation = generation;
 }
 
 impl Ext4Inode {
@@ -673,6 +798,30 @@ impl<T> TryFrom<&[T]> for Ext4ExtentHeader {
     }
 }
 
+impl Ext4ExtentHeader{
+    pub fn ext4_extent_header_depth(&self) -> u16 {
+        self.depth
+    }
+
+    pub fn ext4_extent_header_set_depth(&mut self, depth: u16) {
+        self.depth = depth;
+    }
+    pub fn ext4_extent_header_set_entries_count(&mut self, entries_count: u16) {
+        self.entries_count = entries_count;
+    }
+    pub fn ext4_extent_header_set_generation(&mut self, generation: u32) {
+        self.generation = generation;
+    }
+    pub fn ext4_extent_header_set_magic(&mut self) {
+        self.magic = EXT4_EXTENT_MAGIC;
+    }
+
+    pub fn ext4_extent_header_set_max_entries_count(&mut self, max_entries_count: u16) {
+        self.max_entries_count = max_entries_count;
+    }
+
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Ext4ExtentIndex {
@@ -876,12 +1025,12 @@ pub struct Ext4InodeRef {
 
 impl Ext4InodeRef {
     pub fn new(fs: Weak<Ext4>) -> Self {
-        let inner = Inner {
+        let mut inner = Inner {
             inode: Ext4Inode::default(),
             weak_self: Weak::new(),
         };
 
-        let inode = Self {
+        let mut inode = Self {
             inode_num: 0,
             inner,
             fs,
@@ -924,6 +1073,27 @@ impl Ext4InodeRef {
         };
 
         inode
+    }
+
+
+    pub fn write_back_inode(&mut self) {
+        let fs = self.fs();
+        let block_device = fs.block_device.clone();
+        let super_block = fs.super_block.clone();
+        let inode_id = self.inode_num;
+        self.inner.inode
+            .sync_inode_to_disk_with_csum(block_device, &super_block, inode_id)
+            .unwrap()
+    }
+
+    pub fn write_back_inode_without_csum(&mut self) {
+        let fs = self.fs();
+        let block_device = fs.block_device.clone();
+        let super_block = fs.super_block.clone();
+        let inode_id = self.inode_num;
+        self.inner.inode
+            .sync_inode_to_disk(block_device, &super_block, inode_id)
+            .unwrap()
     }
 }
 
@@ -1029,6 +1199,136 @@ impl TryFrom<&[u8]> for Ext4DirEntry {
     }
 }
 
+impl Ext4DirEntry{
+
+    pub fn get_name(&self) -> String {
+        let name_len = self.name_len as usize;
+        let name = &self.name[..name_len];
+        let name = core::str::from_utf8(name).unwrap();
+        name.to_string()
+    }
+
+    pub fn get_name_len(&self) -> usize {
+        let name_len = self.name_len as usize;
+        name_len
+    }
+
+    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock) -> u32{
+        
+        let ino_index = self.inode;
+        let ino_gen = 0 as u32;
+
+        let mut csum = 0;
+
+        let uuid = s.uuid;
+    
+        csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
+        csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
+    
+        let mut data = [0u8; 0xff4];    
+        copy_diren_to_array(&self, &mut data);
+        csum = ext4_crc32c(csum, &data, 0xff4);
+        
+        csum
+    }
+
+    pub fn write_de_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize){
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, 0x20)
+        };
+        dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntry>(), data.iter().cloned());
+        // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntry>()], data[..]);
+    }
+
+}
+
+
+pub fn copy_dir_entry_to_array(header: &Ext4DirEntry, array: &mut [u8], offset: usize) {
+    unsafe {
+        let de_ptr = header as *const Ext4DirEntry as *const u8;
+        let array_ptr = array as *mut [u8] as *mut u8;
+        // let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
+        core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), 20);
+    }
+}
+
+pub fn copy_diren_tail_to_array(dir_en: &Ext4DirEntryTail, array: &mut [u8], offset: usize) {
+    unsafe {
+        let de_ptr = dir_en as *const Ext4DirEntryTail as *const u8;
+        let array_ptr = array as *mut [u8] as *mut u8;
+        let count = core::mem::size_of::<Ext4DirEntryTail>();
+        core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
+    }
+}
+
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Ext4DirEntryTail {
+    pub reserved_zero1: u32, 
+    pub rec_len: u16,        
+    pub reserved_zero2: u8,  
+    pub reserved_ft: u8,     
+    pub checksum: u32,       // crc32c(uuid+inum+dirblock)
+}
+
+impl Ext4DirEntryTail{
+
+    pub fn from(data: &[u8], blocksize: usize) -> Option<Self> {
+        unsafe {
+            let ptr = data as *const [u8] as *mut u8;
+            let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail);
+            if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
+                return None;
+            }
+            if t.rec_len.to_le() != core::mem::size_of::<Ext4DirEntryTail>() as u16 {
+                return None;
+            }
+            if t.reserved_ft != 0xDE {
+                return None;
+            }
+            Some(t)
+        }
+    }
+
+    pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry){
+        let csum = diren.ext4_dir_get_csum(s);
+        self.checksum = csum;
+    }
+
+    pub fn write_de_tail_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize){
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, 0x20)
+        };
+        dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntryTail>(), data.iter().cloned());
+        // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()], data[..]);
+    }
+
+    pub fn sync_de_tail_to_disk(&self, block_device: Arc<dyn BlockDevice>, dst_blk: &mut Ext4Block){
+        let offset = BASE_OFFSET as usize - core::mem::size_of::<Ext4DirEntryTail>();
+
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Ext4DirEntryTail>())
+        };
+        dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntryTail>(), data.iter().cloned());
+        assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()], data[..]);
+        block_device.write_offset(dst_blk.disk_block_id as usize * BLOCK_SIZE, &dst_blk.block_data);
+    }
+
+
+
+}
+
+
+pub fn copy_diren_to_array(diren: &Ext4DirEntry, array: &mut [u8]) {
+    unsafe {
+        let diren_ptr = diren as *const Ext4DirEntry as *const u8;
+        let array_ptr = array as *mut [u8] as *mut u8;
+        core::ptr::copy_nonoverlapping(diren_ptr, array_ptr, core::mem::size_of::<Ext4DirEntry>());
+    }
+}
+
 pub struct Ext4DirSearchResult<'a> {
     pub block: Ext4Block<'a>,
     pub dentry: Ext4DirEntry,
@@ -1054,6 +1354,13 @@ pub struct Ext4Block<'a> {
     pub dirty: bool,
 }
 
+impl <'a>Ext4Block<'a>{
+    pub fn sync_blk_to_disk(&self, block_device: Arc<dyn BlockDevice>  ){
+        let block_id = self.disk_block_id as usize;
+        block_device.write_offset(block_id * BLOCK_SIZE, &self.block_data);
+    }
+}
+
 bitflags! {
     #[derive(PartialEq, Eq)]
     pub struct DirEntryType: u8 {
@@ -1063,7 +1370,7 @@ bitflags! {
         const EXT4_DE_CHRDEV = 3;
         const EXT4_DE_BLKDEV = 4;
         const EXT4_DE_FIFO = 5;
-        const SOEXT4_DE_SOCKCK = 6;
+        const EXT4_DE_SOCK = 6;
         const EXT4_DE_SYMLINK = 7;
     }
 }
@@ -1104,4 +1411,63 @@ pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
     csum = ext4_crc32c(csum, bitmap, (inodes_per_group + 7) / 8);
     csum
+}
+
+// 定义ext4_ext_binsearch函数，接受一个指向ext4_extent_path的可变引用和一个逻辑块号，返回一个布尔值，表示是否找到了对应的extent
+pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath, block: u32) -> bool {
+    // 获取extent header的引用
+    let eh = unsafe { &*path.header };
+
+    if eh.entries_count == 0 {
+        false;
+    }
+
+    // 定义左右两个指针，分别指向第一个和最后一个extent
+    let mut l = unsafe { ext4_first_extent(eh).add(1) };
+    let mut r = unsafe { ext4_last_extent(eh) };
+
+    // 如果extent header中没有有效的entry，直接返回false
+    if eh.entries_count == 0 {
+        return false;
+    }
+    // 使用while循环进行二分查找
+    while l <= r {
+        // 计算中间指针
+        let m = unsafe { l.add((r as usize - l as usize) / 2) };
+        // 获取中间指针所指向的extent的引用
+        let ext = unsafe { &*m };
+        // 比较逻辑块号和extent的第一个块号
+        if block < ext.first_block {
+            // 如果逻辑块号小于extent的第一个块号，说明目标在左半边，将右指针移动到中间指针的左边
+            r = unsafe { m.sub(1) };
+        } else {
+            // 如果逻辑块号大于或等于extent的第一个块号，说明目标在右半边，将左指针移动到中间指针的右边
+            l = unsafe { m.add(1) };
+        }
+    }
+    // 循环结束后，将path的extent字段设置为左指针的前一个位置
+    path.extent = unsafe { l.sub(1) };
+    // 返回true，表示找到了对应的extent
+    true
+}
+
+
+
+pub fn ext4_fs_correspond_inode_mode(filetype: u8) -> u32 {
+    // println!("filetype: {:?}", filetype);
+    let file_type = DirEntryType::from_bits(filetype).unwrap();
+    match file_type {
+        DirEntryType::EXT4_DE_DIR => EXT4_INODE_MODE_DIRECTORY as u32,
+        DirEntryType::EXT4_DE_REG_FILE => EXT4_INODE_MODE_FILE as u32,
+        DirEntryType::EXT4_DE_SYMLINK => EXT4_INODE_MODE_SOFTLINK as u32,
+        DirEntryType::EXT4_DE_CHRDEV => EXT4_INODE_MODE_CHARDEV as u32,
+        DirEntryType::EXT4_DE_BLKDEV => EXT4_INODE_MODE_BLOCKDEV as u32,
+        DirEntryType::EXT4_DE_FIFO => EXT4_INODE_MODE_FIFO as u32,
+        DirEntryType::EXT4_DE_SOCK => EXT4_INODE_MODE_SOCKET as u32,
+        _ => {
+
+            // FIXME: unsupported filetype
+            EXT4_INODE_MODE_FILE as u32
+        }
+    }
 }
