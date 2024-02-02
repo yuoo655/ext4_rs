@@ -76,13 +76,19 @@ pub fn main() {
     println!("data sample {:x?}", &data[0..10])
 
 
-    // write test
+    // // write test
+    // // file
     // for i in 0..10{
     //     let path = format!("{}.txt", i);
     //     let path = path.as_str();
     //     let mut ext4_file = Ext4File::new();
     //     ext4.ext4_open(&mut ext4_file, path, "w+", true);
     // }
-
-
+    // // dir
+    // for i in 0..10{
+    //     let path = format!("dirtest{}", i);
+    //     let path = path.as_str();
+    //     let mut ext4_file = Ext4File::new();
+    //     ext4.ext4_open(&mut ext4_file, path, "w", false);
+    // }
 }

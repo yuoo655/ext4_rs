@@ -243,6 +243,22 @@ impl Ext4Superblock {
         self.free_inodes_count -= 1;
     }
 
+    pub fn free_blocks_count(&self) -> u64 {
+        self.free_blocks_count_lo as u64 | ((self.free_blocks_count_hi as u64) << 32).to_le()
+    }
+
+    pub fn set_free_blocks_count(&mut self, count: u64) {
+        self.free_blocks_count_lo = (count << 32) as u32;
+        self.free_blocks_count_hi = (count >> 32) as u32;
+    }
+
+    pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
+        };
+        block_device.write_offset(BASE_OFFSET, data);
+    }
+
     // pub fn sync_super_block_to_disk(&self, block_device: Arc<dyn BlockDevice>){
     //     let data = unsafe {
     //         core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
@@ -404,6 +420,19 @@ impl Ext4Inode {
             core::ptr::copy_nonoverlapping(header_ptr, array_ptr, 3);
         }
     }
+
+    pub fn ext4_inode_get_blocks_count(&self) -> u64 {
+        let mut blocks = self.blocks as u64;
+        if self.osd2.l_i_blocks_high != 0 {
+            blocks |= (self.osd2.l_i_blocks_high as u64) << 32;
+        }
+        blocks
+    }
+
+    // pub fn ext4_inode_set_blocks_count(&mut self, inode_blocks: u64){
+    //     self.blocks = inode_blocks as u32;
+    //     self.osd2.l_i_blocks_high = (inode_blocks >> 32) as u16;
+    // }
 }
 
 
@@ -600,6 +629,16 @@ impl TryFrom<&[u8]> for Ext4BlockGroup {
 }
 
 impl Ext4BlockGroup {
+
+    pub fn get_block_bitmap_block(&self, s: &Ext4Superblock) -> u64 {
+        let mut v = self.block_bitmap_lo as u64;
+        let desc_size = s.desc_size;
+        if desc_size > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            v |= (self.block_bitmap_hi as u64) << 32;
+        }
+        v
+    }
+
     pub fn get_inode_bitmap_block(&self, s: &Ext4Superblock) -> u64 {
         let mut v = self.inode_bitmap_lo as u64;
         let desc_size = s.desc_size;
@@ -738,6 +777,36 @@ impl Ext4BlockGroup {
         if desc_size == EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.inode_bitmap_csum_hi = hi_csum as u16;
         }
+    }
+
+    
+    pub fn set_block_group_balloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
+        let desc_size = s.desc_size();
+
+        let csum = ext4_balloc_bitmap_csum(bitmap, s);
+        let lo_csum = (csum & 0xFFFF).to_le();
+        let hi_csum = (csum >> 16).to_le();
+
+        if (s.features_read_only & 0x400) >> 10 == 0 {
+            return;
+        }
+        self.block_bitmap_csum_lo = lo_csum as u16;
+        if desc_size == EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            self.block_bitmap_csum_hi = hi_csum as u16;
+        }
+    }
+
+    pub fn get_free_blocks_count(&self) -> u64 {
+        let mut v = self.free_blocks_count_lo as u64;
+        if self.free_blocks_count_hi != 0 {
+            v |= (self.free_blocks_count_hi as u64) << 32;
+        }
+        v
+    }
+
+    pub fn set_free_blocks_count(&mut self, cnt: u64) {
+        self.free_blocks_count_lo = ((cnt << 32) >> 32) as u16;
+        self.free_blocks_count_hi = (cnt >> 32) as u16;
     }
 }
 
@@ -1413,6 +1482,15 @@ pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     csum
 }
 
+pub fn ext4_balloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
+    let mut csum = 0;
+    let blocks_per_group = s.blocks_per_group;
+    let uuid = s.uuid;
+    csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+    csum = ext4_crc32c(csum, bitmap, (blocks_per_group / 8) as u32);
+    csum
+}
+
 // 定义ext4_ext_binsearch函数，接受一个指向ext4_extent_path的可变引用和一个逻辑块号，返回一个布尔值，表示是否找到了对应的extent
 pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath, block: u32) -> bool {
     // 获取extent header的引用
@@ -1469,5 +1547,18 @@ pub fn ext4_fs_correspond_inode_mode(filetype: u8) -> u32 {
             // FIXME: unsupported filetype
             EXT4_INODE_MODE_FILE as u32
         }
+    }
+}
+
+
+pub fn ext4_inodes_in_group_cnt(bgid: u32, s: &Ext4Superblock) -> u32 {
+    let block_group_count = s.block_groups_count();
+    let inodes_per_group = s.inodes_per_group;
+    let total_inodes = ((s.inodes_count as u64) << 32) as u32;
+
+    if bgid < block_group_count - 1 {
+        inodes_per_group
+    } else {
+        total_inodes - ((block_group_count - 1) * inodes_per_group)
     }
 }

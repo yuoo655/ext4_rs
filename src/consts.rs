@@ -22,6 +22,8 @@ pub const EXT4_INODE_MODE_SOFTLINK: usize =  0xA000;
 pub const EXT4_INODE_MODE_SOCKET: usize =  0xC000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 =  0xF000;
 
+pub const EXT_MAX_BLOCKS: ext4_lblk_t = core::u32::MAX;
+
 /// Maximum bytes in a path
 pub const PATH_MAX: usize = 4096;
 
@@ -31,6 +33,30 @@ pub const NAME_MAX: usize = 255;
 /// The upper limit for resolving symbolic links
 pub const SYMLINKS_MAX: usize = 40;
 
+
+#[derive(Debug, PartialEq)]
+pub enum LibcOpenFlags {
+    O_ACCMODE,
+    O_RDONLY,
+    O_WRONLY,
+    O_RDWR,
+    O_CREAT,
+    O_EXCL,
+    O_NOCTTY,
+    O_TRUNC,
+    O_APPEND,
+    O_NONBLOCK,
+    O_SYNC,
+    O_ASYNC,
+    O_LARGEFILE,
+    O_DIRECTORY,
+    O_NOFOLLOW,
+    O_CLOEXEC,
+    O_DIRECT,
+    O_NOATIME,
+    O_PATH,
+    O_DSYNC,
+}
 
 pub const O_ACCMODE: u32 = 0o0003;
 pub const O_RDONLY: u32 = 0o00;
@@ -90,7 +116,7 @@ pub const EDOM: usize = 		33; 	/* Math argument out of domain of func */
 pub const ERANGE: usize = 		34; 	/* Math result not representable */
 
 bitflags! {
-    pub struct OFlag: u32 {
+    pub struct OpenFlag: u32 {
         // 以下是open/fcntl的一些常量，和C语言的值相同
         const O_ACCMODE = 0o0003;
         const O_RDONLY = 0o00;
