@@ -3484,7 +3484,7 @@ pub fn ext4_fwrite<A: Ext4Traits>(ext4_file: &mut Ext4File, data: &[u8], size: u
     }
 
     let mut inode = read_inode::<A>(ext4_file.inode as u64, &super_block);
-    inode.size = write_size as u32;
+    inode.size = fblock_count as u32 * BLOCK_SIZE as u32;
     let block_offset = get_inode_block::<A>(inode_ref.index as u64, &super_block);
     let mut write_back_data = [0u8; 0x9c];
     copy_inode_to_array(&inode, &mut write_back_data);
