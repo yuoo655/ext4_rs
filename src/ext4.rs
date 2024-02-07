@@ -246,7 +246,7 @@ impl Ext4 {
                     break;
                 }
 
-                ext4_fs_put_inode_ref_csum(&mut child_inode_ref);
+                // ext4_fs_put_inode_ref_csum(&mut child_inode_ref);
                 // ext4_fs_put_inode_ref(parent_inode);
 
                 continue;
