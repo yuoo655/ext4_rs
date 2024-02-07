@@ -180,12 +180,13 @@ impl Ext4 {
 
         // load root inode
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
-
+        
         // if !parent_inode.is_none() {
         //     parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
         // }
 
         // search dir
+        let mut search_parent = root_inode_ref;
         let mut search_path = ext4_path_skip(&path, ".");
         let mut len = 0;
         loop {
@@ -198,7 +199,7 @@ impl Ext4 {
             );
 
             let r = ext4_dir_find_entry(
-                &mut root_inode_ref,
+                &mut search_parent,
                 &search_path[..len as usize],
                 len as u32,
                 &mut dir_search_result,
@@ -246,10 +247,10 @@ impl Ext4 {
                     break;
                 }
 
-                // ext4_fs_put_inode_ref_csum(&mut child_inode_ref);
+                ext4_fs_put_inode_ref_csum(&mut child_inode_ref);
                 // ext4_fs_put_inode_ref(parent_inode);
 
-                continue;
+                // continue;
             }
 
             let name = get_name(
@@ -257,12 +258,13 @@ impl Ext4 {
                 dir_search_result.dentry.name_len as usize,
             )
             .unwrap();
-            println!("find de name{:?}", name);
+            // println!("find de name{:?} de inode {:x?}", name, dir_search_result.dentry.inode);
 
             if is_goal {
                 file.inode = dir_search_result.dentry.inode;
                 return;
             } else {
+                search_parent = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), dir_search_result.dentry.inode);
                 search_path = &search_path[len..];
             }
         }
@@ -661,7 +663,7 @@ pub fn ext4_dir_find_entry(
     name_len: u32,
     result: &mut Ext4DirSearchResult,
 ) -> usize {
-    println!("ext4_dir_find_entry {:?}", name);
+    println!("ext4_dir_find_entry parent {:x?} {:?}",parent.inode_num,  name);
     let mut iblock = 0;
     let mut fblock: ext4_fsblk_t = 0;
 
@@ -684,7 +686,6 @@ pub fn ext4_dir_find_entry(
         };
 
         let r = ext4_dir_find_in_block(&mut ext4_block, name, name_len, result);
-
         if r {
             return EOK;
         }
@@ -692,8 +693,7 @@ pub fn ext4_dir_find_entry(
         iblock += 1
     }
 
-    println!("ext4_dir_find_entry ENOENT");
-    EOK
+    ENOENT
 }
 
 pub fn ext4_extent_get_blocks(
@@ -1112,7 +1112,7 @@ pub fn ext4_find_extent(
 
     let eh = &inode.block as *const [u32; 15] as *mut Ext4ExtentHeader;
 
-    println!("eh {:x?}", unsafe { *eh });
+    // println!("eh {:x?}", unsafe { *eh });
     let extent_header = Ext4ExtentHeader::try_from(&inode.block[..]).unwrap();
 
     let depth = extent_header.depth;
@@ -1125,24 +1125,7 @@ pub fn ext4_find_extent(
         path[0].maxdepth = path_depth;
     }
 
-    // path[0].header = eh;
-    // path[0].depth = depth;
     let mut ppos = 0 as usize;
-    // let mut i = depth;
-
-    // println!("eh {:x?}", unsafe{*(path[0].header)});
-    // while i > 0 {
-    //     ext4_ext_binsearch_idx(&mut path[ppos], iblock);
-
-    //     path[ppos].p_block = ext4_idx_pblock(path[ppos].index) as u32;
-    //     path[ppos].depth = i as u16;
-    //     // path[ppos].extent = core::ptr::null_mut();
-
-    //     // 获取索引指向的子节点的物理块号
-    //     block_nr = path[ppos].p_block as u64;
-    //     i -= 1;
-    //     ppos += 1;
-    // }
 
     let mut extent_path = Ext4ExtentPath::default();
     extent_path.depth = depth;
@@ -1153,16 +1136,13 @@ pub fn ext4_find_extent(
 
     // let r = ext4_ext_binsearch(&mut path[0], iblock);
 
-    println!("r {:?}", r);
     if r {
         let extent = unsafe { *path[ppos].extent };
         let pblock = extent.start_lo | (((extent.start_hi as u32) << 31) << 1);
         orig_path.p_block = pblock;
 
-        println!("ex {:x?}", extent);
-        // unsafe{
-        //     *(path[ppos].extent) = extent;
-        // }
+        // println!("ex {:x?}", extent);
+
 
         // 获取最后一个节点的extent
         ex = ext4_ext_find_extent(eh, iblock);
@@ -1263,14 +1243,10 @@ pub fn ext4_dir_find_in_block(
         }
 
         let s = get_name(de.name, de.name_len as usize);
-
+        // println!("ext4_dir_find_in_block {:?}", s);
         if let Ok(s) = s {
             if name_len == de.name_len as u32 {
                 if name.to_string() == s {
-                    // println!(
-                    //     "dir found name_len {:x?} de.name_len {:x?}",
-                    //     name_len, de.name_len
-                    // );
                     result.dentry = de;
                     return true;
                 }
