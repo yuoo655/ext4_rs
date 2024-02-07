@@ -22,7 +22,7 @@ pub struct Ext4File {
     /// 文件大小
     pub fsize: u64,
     /// 实际文件位置
-    pub fpos: u64,
+    pub fpos: usize,
 }
 
 impl Ext4File {
@@ -1054,7 +1054,7 @@ pub fn ext4_inode_hdr_mut(inode: &mut Ext4Inode) -> *mut Ext4ExtentHeader {
     eh
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Ext4ExtentPath {
     // Physical block number
     pub p_block: u32,
@@ -1063,13 +1063,13 @@ pub struct Ext4ExtentPath {
     // Depth of this extent node
     pub depth: u16,
     // Max depth of the extent tree
-    pub maxdepth: i32,
+    pub maxdepth: u16,
     // Pointer to the extent header
-    pub header: *const Ext4ExtentHeader,
+    pub header: *mut Ext4ExtentHeader,
     // Pointer to the index in the current node
-    pub index: *const Ext4ExtentIndex,
+    pub index: *mut Ext4ExtentIndex,
     // Pointer to the extent in the current node
-    pub extent: *const Ext4Extent,
+    pub extent: *mut Ext4Extent,
 }
 
 impl Default for Ext4ExtentPath {
@@ -1086,6 +1086,38 @@ impl Default for Ext4ExtentPath {
     }
 }
 
+
+#[derive(Debug, Clone, Copy)]
+pub struct Ext4ExtentPathOld {
+    // Physical block number
+    pub p_block: u32,
+    // Single block descriptor
+    // pub block: Ext4Block,
+    // Depth of this extent node
+    pub depth: u16,
+    // Max depth of the extent tree
+    pub maxdepth: u16,
+    // Pointer to the extent header
+    pub header: *const Ext4ExtentHeader,
+    // Pointer to the index in the current node
+    pub index: *const Ext4ExtentIndex,
+    // Pointer to the extent in the current node
+    pub extent: *const Ext4Extent,
+}
+
+impl Default for Ext4ExtentPathOld {
+    fn default() -> Self {
+        Self {
+            p_block: 0,
+            // block: Ext4Block::default(),
+            depth: 0,
+            maxdepth: 0,
+            header: core::ptr::null_mut(),
+            index: core::ptr::null_mut(),
+            extent: core::ptr::null_mut(),
+        }
+    }
+}
 pub struct Ext4InodeRef {
     pub inode_num: u32,
     pub inner: Inner,
@@ -1491,8 +1523,50 @@ pub fn ext4_balloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     csum
 }
 
-// 定义ext4_ext_binsearch函数，接受一个指向ext4_extent_path的可变引用和一个逻辑块号，返回一个布尔值，表示是否找到了对应的extent
+
 pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath, block: u32) -> bool {
+    // 获取extent header的引用
+    // let eh = unsafe { &*path.header };
+    let eh = path.header;
+
+    unsafe {
+        if (*eh).entries_count == 0 {
+            return false;
+        }
+    }
+
+    // 定义左右两个指针，分别指向第一个和最后一个extent
+    let mut l = unsafe { ext4_first_extent_mut(eh).add(1) };
+    let mut r = unsafe { ext4_last_extent_mut(eh) };
+
+    // 如果extent header中没有有效的entry，直接返回false
+    unsafe {
+        if (*eh).entries_count == 0 {
+            return false;
+        }
+    }
+    // 使用while循环进行二分查找
+    while l <= r {
+        // 计算中间指针
+        let m = unsafe { l.add((r as usize - l as usize) / 2) };
+        // 获取中间指针所指向的extent的引用
+        let ext = unsafe { &*m };
+        // 比较逻辑块号和extent的第一个块号
+        if block < ext.first_block {
+            // 如果逻辑块号小于extent的第一个块号，说明目标在左半边，将右指针移动到中间指针的左边
+            r = unsafe { m.sub(1) };
+        } else {
+            // 如果逻辑块号大于或等于extent的第一个块号，说明目标在右半边，将左指针移动到中间指针的右边
+            l = unsafe { m.add(1) };
+        }
+    }
+    // 循环结束后，将path的extent字段设置为左指针的前一个位置
+    path.extent = unsafe { l.sub(1) };
+    // 返回true，表示找到了对应的extent
+    true
+}
+
+pub fn ext4_ext_binsearch_old(path: &mut Ext4ExtentPathOld, block: u32) -> bool {
     // 获取extent header的引用
     let eh = unsafe { &*path.header };
 
@@ -1560,5 +1634,93 @@ pub fn ext4_inodes_in_group_cnt(bgid: u32, s: &Ext4Superblock) -> u32 {
         inodes_per_group
     } else {
         total_inodes - ((block_group_count - 1) * inodes_per_group)
+    }
+}
+
+
+// 定义ext4_ext_binsearch函数，接受一个指向ext4_extent_path的可变引用和一个逻辑块号，返回一个布尔值，表示是否找到了对应的extent
+pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: ext4_lblk_t) -> bool {
+    // 获取extent header的引用
+    let eh = path.header;
+
+    // 定义左右两个指针，分别指向第一个和最后一个extent
+    let mut l = unsafe { ext4_first_extent_index_mut(eh).add(1) };
+    let mut r = unsafe { ext4_last_extent_index_mut(eh) };
+
+    // 如果extent header中没有有效的entry，直接返回false
+    unsafe {
+        if (*eh).entries_count == 0 {
+            return false;
+        }
+    }
+    // 使用while循环进行二分查找
+    while l <= r {
+        // 计算中间指针
+        let m = unsafe { l.add((r as usize - l as usize) / 2) };
+        // 获取中间指针所指向的extent的引用
+        let ext = unsafe { &*m };
+        // 比较逻辑块号和extent的第一个块号
+        if block < ext.first_block {
+            // 如果逻辑块号小于extent的第一个块号，说明目标在左半边，将右指针移动到中间指针的左边
+            r = unsafe { m.sub(1) };
+        } else {
+            // 如果逻辑块号大于或等于extent的第一个块号，说明目标在右半边，将左指针移动到中间指针的右边
+            l = unsafe { m.add(1) };
+        }
+    }
+    // 循环结束后，将path的extent字段设置为左指针的前一个位置
+    path.index = unsafe { l.sub(1) };
+    // 返回true，表示找到了对应的extent
+    true
+}
+
+pub fn ext4_ext_find_extent(
+    eh: *mut Ext4ExtentHeader,
+    block: ext4_lblk_t,
+) -> *mut Ext4Extent {
+    // 初始化一些变量
+    let mut low: i32;
+    let mut high: i32;
+    let mut mid: i32;
+    let mut ex: *mut Ext4Extent;
+
+    // 如果头部的extent数为0，返回空指针
+    if eh.is_null() || unsafe { (*eh).entries_count } == 0 {
+        return core::ptr::null_mut();
+    }
+
+    // 从头部获取第一个extent的指针
+    ex = ext4_first_extent_mut(eh);
+
+    // 如果头部的深度不为0，返回空指针
+    if unsafe { (*eh).depth } != 0 {
+        return core::ptr::null_mut();
+    }
+
+    // 使用二分查找法在extent数组中查找逻辑块号
+    low = 0;
+    high = unsafe { (*eh).entries_count - 1 } as i32;
+    while low <= high {
+        // 计算中间位置
+        mid = (low + high) / 2;
+
+        // 获取中间位置的extent的指针
+        ex = unsafe { ex.add(mid as usize) };
+
+        // 比较extent的逻辑块号和目标逻辑块号
+        if block >= unsafe { (*ex).first_block } {
+            // 如果目标逻辑块号大于等于extent的逻辑块号，说明目标在右半部分
+            low = mid + 1;
+        } else {
+            // 如果目标逻辑块号小于extent的逻辑块号，说明目标在左半部分
+            high = mid - 1;
+        }
+    }
+
+    // 如果没有找到目标，返回最后一个小于目标的extent的指针
+    if high < 0 {
+        return core::ptr::null_mut();
+    } else {
+        return unsafe { ex.add(high as usize) };
     }
 }
