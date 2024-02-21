@@ -241,7 +241,7 @@ impl Ext4 {
                     len as u32,
                 );
 
-                println!("is_goal {:?} r {:?}", is_goal, r);
+                // println!("is_goal {:?} r {:?}", is_goal, r);
 
                 // let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
                 // let ext4_blk = Ext4Block {
@@ -587,7 +587,7 @@ pub fn ext4_fs_append_inode_dblk(
     current_block = current_fsblk;
     *fblock = current_block;
 
-    println!("fblock {:x?}", fblock);
+    // println!("fblock {:x?}", fblock);
 }
 
 pub fn ext4_fs_inode_blocks_init(inode_ref: &mut Ext4InodeRef) {
@@ -752,7 +752,7 @@ pub fn ext4_extent_get_blocks(
         }
     }
 
-    println!("extent is null");
+    // println!("extent is null");
 
     // 如果没有找到extent，或者找到的extent不包含iblock，需要分配新的extent
     let mut allocated: u32 = 0;
@@ -934,7 +934,7 @@ pub fn ext4_ext_insert_leaf(
     diskblock = newext.start_lo;
     diskblock |= ((newext.start_hi as u32) << 31) << 1;
 
-    println!("insert newext {:x?}", newext);
+    // println!("insert newext {:x?}", newext);
 
     unsafe {
         if !ex.is_null() && ext4_ext_can_append(&*(path.extent), newext) {
@@ -963,7 +963,7 @@ pub fn ext4_ext_insert_leaf(
         let first_extent = ext_first_extent(eh);
         unsafe {
             (*path).extent = first_extent;
-            println!("first_extent {:x?}", unsafe{*first_extent});
+            // println!("first_extent {:x?}", unsafe{*first_extent});
         }
         unsafe {
             if (*eh).entries_count == (*eh).max_entries_count {
@@ -1162,11 +1162,6 @@ pub fn ext4_find_extent(
     // 获取最后一个节点的extent
     let ex = ext4_ext_find_extent(eh, iblock);
 
-    if ex.is_null() {
-        println!("ext4_ext_find_extent ex is null");
-    } else {
-        println!("ext4_ext_find_extent ex not null ex {:x?}", ex);
-    }
     // 设置最后一个元素的extent
     path[depth as usize].extent = ex;
 

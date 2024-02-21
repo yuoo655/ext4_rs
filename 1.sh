@@ -8,8 +8,3 @@ cp ../test_files/* ./test_files/
 cd ../
 umount tmp
 cargo run
-mount ./ex4.img ./tmp
-cd tmp
-ls
-cd .. 
-umount ./tmp

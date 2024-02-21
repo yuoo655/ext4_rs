@@ -5,16 +5,15 @@
 ```sh
 git checkout dev
 python3 gen_test_files.py
-sh gen_img.sh
-cargo run
+sh 1.sh
 ```
 
-# write example (code is in the process of refactoring)
+# write example 
 
 ```sh
-git checkout write_dev
-sh gen_write_img.sh
-cargo test test_write
+git checkout dev
+python3 gen_test_files.py
+sh 1.sh
 ```
 
 # how to use 
