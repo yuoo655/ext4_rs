@@ -247,9 +247,9 @@ impl Ext4Superblock {
         self.free_blocks_count_lo as u64 | ((self.free_blocks_count_hi as u64) << 32).to_le()
     }
 
-    pub fn set_free_blocks_count(&mut self, count: u64) {
-        self.free_blocks_count_lo = (count << 32) as u32;
-        self.free_blocks_count_hi = (count >> 32) as u32;
+    pub fn set_free_blocks_count(&mut self, free_blocks: u64) {
+        self.free_blocks_count_lo = ((free_blocks << 32) >> 32).to_le() as u32;
+        self.free_blocks_count_hi = (free_blocks >> 32) as u32;
     }
 
     pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
@@ -1057,7 +1057,7 @@ pub fn ext4_inode_hdr_mut(inode: &mut Ext4Inode) -> *mut Ext4ExtentHeader {
 #[derive(Debug, Clone, Copy)]
 pub struct Ext4ExtentPath {
     // Physical block number
-    pub p_block: u32,
+    pub p_block: u64,
     // Single block descriptor
     // pub block: Ext4Block,
     // Depth of this extent node
