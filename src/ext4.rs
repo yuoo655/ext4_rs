@@ -627,6 +627,7 @@ pub fn ext4_fs_inode_blocks_init(inode_ref: &mut Ext4InodeRef) {
 }
 
 pub fn ext4_fs_alloc_inode(child_inode_ref: &mut Ext4InodeRef, filetype: u8) -> usize {
+    
     let mut is_dir = false;
 
     let inode_size = child_inode_ref.fs().super_block.inode_size();
