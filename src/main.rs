@@ -74,23 +74,25 @@ pub fn main() {
     ext4.ext4_open(&mut ext4_file, path, "r+", false);
     println!("ext4_file inode {:?}", ext4_file.inode);
     let data = ext4.ext4_file_read(&mut ext4_file);
-    println!("data sample {:x?}", &data[0..10]);
+    println!("read data sample {:x?}", &data[0..10]);
 
 
     // write test
     // file
+    println!("----write test----");
     for i in 0..10{
         let path = format!("write_{}.txt", i);
         let path = path.as_str();
         let mut ext4_file = Ext4File::new();
         ext4.ext4_open(&mut ext4_file, path, "w+", true);
-        let write_data: [u8; 8192] = [i as u8; 8192];
+        let write_data: [u8; 8192] = [0x41 + i as u8; 8192];
         ext4.ext4_file_write(&mut ext4_file, &write_data, 8192);
         
+
         // test
         ext4.ext4_open(&mut ext4_file, path, "r+", false);
         let data = ext4.ext4_file_read(&mut ext4_file);
-        println!("data sample {:x?}", &data[0..10]);
+        println!("read data sample {:x?}", &data[0..10]);
     }
     
     // // dir

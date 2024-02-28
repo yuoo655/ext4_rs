@@ -259,6 +259,13 @@ impl Ext4Superblock {
         block_device.write_offset(BASE_OFFSET, data);
     }
 
+    pub fn sync_to_disk_with_csum(&self, block_device: Arc<dyn BlockDevice>) {
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
+        };
+        block_device.write_offset(BASE_OFFSET, data);
+    }
+
     // pub fn sync_super_block_to_disk(&self, block_device: Arc<dyn BlockDevice>){
     //     let data = unsafe {
     //         core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
@@ -553,13 +560,11 @@ impl Ext4Inode {
         checksum = ext4_crc32c(checksum, &ino_index.to_le_bytes(), 4);
         checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
 
-        // cast self to &[u8]
-        // attention checksum size here is 0x100 inode_size is 0x97
-        let self_bytes =
-            unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 0x100 as usize) };
+        let mut raw_data = [0u8; 0x100];
+        copy_inode_to_array(&self, &mut raw_data);
 
         // inode checksum
-        checksum = ext4_crc32c(checksum, self_bytes, inode_size as u32);
+        checksum = ext4_crc32c(checksum, &raw_data, inode_size as u32);
 
         self.set_inode_checksum_value(super_block, inode_id, checksum);
 
@@ -590,6 +595,16 @@ impl Ext4Inode {
         self.sync_inode_to_disk(block_device, super_block, inode_id)
     }
 }
+
+
+pub fn copy_inode_to_array(inode: &Ext4Inode, array: &mut [u8]) {
+    unsafe {
+        let inode_ptr = inode as *const Ext4Inode as *const u8;
+        let array_ptr = array as *mut [u8] as *mut u8;
+        core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
+    }
+}
+
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
@@ -1292,13 +1307,21 @@ impl Default for Ext4DirEntry {
     }
 }
 
-impl TryFrom<&[u8]> for Ext4DirEntry {
+impl<T> TryFrom<&[T]> for Ext4DirEntry {
     type Error = u64;
-    fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
+    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
         let data = data;
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }
+
+// impl TryFrom<&[u8]> for Ext4DirEntry {
+//     type Error = u64;
+//     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
+//         let data = data;
+//         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+//     }
+// }
 
 impl Ext4DirEntry{
 

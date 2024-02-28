@@ -367,6 +367,9 @@ impl Ext4 {
         }
         inode_ref.inner.inode.size = fblock_count as u32 * BLOCK_SIZE as u32;
         inode_ref.write_back_inode();
+        let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
+        let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
+        root_inode_ref.write_back_inode();
     }
 }
 
@@ -772,7 +775,7 @@ pub fn ext4_extent_get_blocks(
     newex.first_block = iblock;
     newex.start_lo = alloc_block as u32 & 0xffffffff;
     newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
-    newex.block_count = allocated as u16;
+    newex.block_count = 2 as u16;
 
     ext4_ext_insert_extent(inode_ref, &mut vec_extent_path[0], &newex, 0);
 
@@ -1017,12 +1020,18 @@ pub fn ext4_ext_insert_leaf(
 
         (*(path.extent)).start_lo = newext.start_lo;
         (*(path.extent)).start_hi = newext.start_hi;
+        // println!("--------------entries_count+=1\n");
+        // (*eh).entries_count += 1;
     }
+
+
+
     return EOK;
 }
 
 pub fn ext4_find_all_extent(inode_ref: &Ext4InodeRef, extents: &mut Vec<Ext4Extent>) {
     let extent_header = Ext4ExtentHeader::try_from(&inode_ref.inner.inode.block[..2]).unwrap();
+    // println!("extent_header {:x?}", extent_header);
     let data = &inode_ref.inner.inode.block;
     let depth = extent_header.depth;
 
@@ -1423,17 +1432,17 @@ pub fn ext4_balloc_alloc_block(
 
     /* Update superblock free blocks count */
     let mut super_blk_free_blocks = super_block.free_blocks_count();
-    super_blk_free_blocks -= 1;
+    // super_blk_free_blocks -= 1;
     super_block.set_free_blocks_count(super_blk_free_blocks);
     super_block.sync_to_disk(block_device.clone());
 
     /* Update inode blocks (different block size!) count */
     let mut inode_blocks = inode_ref.inner.inode.ext4_inode_get_blocks_count();
-    inode_blocks += 8;
+    inode_blocks += 16;
     inode_ref
         .inner
         .inode
-        .ext4_inode_set_blocks_count(inode_blocks as u32);
+        .ext4_inode_set_blocks_count(inode_blocks  as u32);
     inode_ref.write_back_inode();
 
     /* Update block group free blocks count */
