@@ -361,7 +361,7 @@ impl Ext4 {
 
         for i in 0..fblock_count {
             let idx = i * BLOCK_SIZE as usize;
-            let offset = (fblk as usize + i as usize) * BLOCK_SIZE;
+            let offset = (fblock_start as usize + i as usize) * BLOCK_SIZE;
             self.block_device
                 .write_offset(offset, &data[idx..(idx + BLOCK_SIZE as usize)]);
         }
