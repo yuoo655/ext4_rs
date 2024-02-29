@@ -38,13 +38,34 @@ let ext4 = Ext4::open(disk);
 ## read/write
 
 ```rust
-let path ="/dirtest1/dirtest2/../../dirtest1/dirtest2/dirtest3/dirtest4/dirtest5/../dirtest5/2.txt";
+// read test
+let path =
+    "/test_files/1.txt";
 let mut ext4_file = Ext4File::new();
 ext4.ext4_open(&mut ext4_file, path, "r+", false);
 let data = ext4.ext4_file_read(&mut ext4_file);
 
-let path ="1.txt"
-ext4.ext4_open(&mut ext4_file, path, "wb", false);
-let write_data = [0x41;4096]
-ext4.ext4_file_write(&mut ext4_file, &write_data);
+
+// write test
+// file
+for i in 0..5{
+    let path = format!("write_{}.txt", i);
+    let path = path.as_str();
+    let mut ext4_file = Ext4File::new();
+    ext4.ext4_open(&mut ext4_file, path, "w+", true);
+    let write_data: [u8; 8192] = [0x41 + i as u8; 8192];
+    ext4.ext4_file_write(&mut ext4_file, &write_data, 8192);
+    
+    // test
+    ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    let data = ext4.ext4_file_read(&mut ext4_file);
+}
+
+// dir
+for i in 0..5{
+    let path = format!("dirtest{}", i);
+    let path = path.as_str();
+    let mut ext4_file = Ext4File::new();
+    ext4.ext4_open(&mut ext4_file, path, "w", false);
+}
 ```
