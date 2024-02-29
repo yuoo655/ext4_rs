@@ -1,4 +1,4 @@
-# rust ext4 crate no std
+# a cross-platform rust ext4 crate
 
 # read example
 
