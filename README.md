@@ -1,6 +1,8 @@
 # a cross-platform rust ext4 crate
 
-# read example
+# read/write example
+
+rust version rustc 1.77.0-nightly   nightly-2023-12-28
 
 ```sh
 git checkout dev
@@ -8,13 +10,6 @@ python3 gen_test_files.py
 sh 1.sh
 ```
 
-# write example 
-
-```sh
-git checkout dev
-python3 gen_test_files.py
-sh 1.sh
-```
 
 # how to use 
 
