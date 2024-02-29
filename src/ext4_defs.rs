@@ -960,7 +960,9 @@ impl<T> TryFrom<&[T]> for Ext4Extent {
     }
 }
 
+
 /// fake dir entry
+#[repr(C)]
 pub struct Ext4FakeDirEntry {
     inode: u32,
     entry_length: u16,
@@ -1358,8 +1360,9 @@ impl Ext4DirEntry{
     }
 
     pub fn write_de_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize){
+        let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
         let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, 0x20)
+            core::slice::from_raw_parts(self as *const _ as *const u8, count)
         };
         dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntry>(), data.iter().cloned());
         // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntry>()], data[..]);
@@ -1372,8 +1375,8 @@ pub fn copy_dir_entry_to_array(header: &Ext4DirEntry, array: &mut [u8], offset: 
     unsafe {
         let de_ptr = header as *const Ext4DirEntry as *const u8;
         let array_ptr = array as *mut [u8] as *mut u8;
-        // let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
-        core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), 20);
+        let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
+        core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
     }
 }
 
@@ -1399,9 +1402,9 @@ pub struct Ext4DirEntryTail {
 
 impl Ext4DirEntryTail{
 
-    pub fn from(data: &[u8], blocksize: usize) -> Option<Self> {
+    pub fn from(data: &mut [u8], blocksize: usize) -> Option<Self> {
         unsafe {
-            let ptr = data as *const [u8] as *mut u8;
+            let ptr = data as *mut [u8] as *mut u8;
             let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail);
             if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
                 return None;
@@ -1426,7 +1429,7 @@ impl Ext4DirEntryTail{
             core::slice::from_raw_parts(self as *const _ as *const u8, 0x20)
         };
         dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntryTail>(), data.iter().cloned());
-        // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()], data[..]);
+        assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()], data[..]);
     }
 
     pub fn sync_de_tail_to_disk(&self, block_device: Arc<dyn BlockDevice>, dst_blk: &mut Ext4Block){

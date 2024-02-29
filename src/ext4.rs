@@ -273,7 +273,7 @@ impl Ext4 {
                 }
 
                 ext4_fs_put_inode_ref_csum(&mut child_inode_ref);
-                // ext4_fs_put_inode_ref(parent_inode);
+                ext4_fs_put_inode_ref_csum(parent_inode);
 
                 continue;
             }
@@ -450,6 +450,10 @@ pub fn ext4_dir_add_entry(
 
         let r = ext4_dir_try_insert_entry(parent, &mut ext4_block, child, path, len);
 
+        if r == EOK {
+            success = true;
+            break;
+        }
         let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
         let ext4_blk = Ext4Block {
             logical_block_id: 0,
@@ -510,16 +514,15 @@ pub fn ext4_dir_try_insert_entry(
             if free_space >= required_len {
                 let mut new_entry = Ext4DirEntry::default();
 
-                ext4_dir_write_entry(&mut new_entry, free_space as u16, &child, name, name_len);
-
                 de.entry_len = sz as u16;
+                ext4_dir_write_entry(&mut new_entry, free_space as u16, &child, name, name_len);
 
                 // update parent new_de to blk_data
                 copy_dir_entry_to_array(&de, &mut dst_blk.block_data, offset);
                 copy_dir_entry_to_array(&new_entry, &mut dst_blk.block_data, offset + sz);
 
                 // set tail csum
-                let mut tail = Ext4DirEntryTail::from(&dst_blk.block_data, BLOCK_SIZE).unwrap();
+                let mut tail = Ext4DirEntryTail::from(&mut dst_blk.block_data, BLOCK_SIZE).unwrap();
                 let block_device = parent.fs().block_device.clone();
                 tail.ext4_dir_set_csum(&parent.fs().super_block, &de);
 
@@ -532,13 +535,13 @@ pub fn ext4_dir_try_insert_entry(
                 // sync to disk
                 dst_blk.sync_blk_to_disk(block_device.clone());
 
-                break;
+                return EOK;
             }
         }
         offset = offset + de.entry_len as usize;
     }
 
-    EOK
+    ENOSPC
 }
 
 // 写入一个ext4目录项
@@ -1345,7 +1348,7 @@ pub fn ext4_ialloc_alloc_inode(fs: Arc<Ext4>, index: &mut u32, is_dir: bool) {
 
             let mut idx_in_bg = 0 as u32;
 
-            ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);
+            ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);            
             ext4_bmap_bit_set(&mut bitmap_data, idx_in_bg);
 
             // update bitmap in disk
