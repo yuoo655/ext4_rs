@@ -1339,7 +1339,7 @@ impl Ext4DirEntry{
         name_len
     }
 
-    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock) -> u32{
+    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data:&[u8]) -> u32{
         
         let ino_index = self.inode;
         let ino_gen = 0 as u32;
@@ -1351,11 +1351,11 @@ impl Ext4DirEntry{
         csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
         csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
         csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
-    
-        let mut data = [0u8; 0xff4];    
-        copy_diren_to_array(&self, &mut data);
-        csum = ext4_crc32c(csum, &data, 0xff4);
-        
+        let mut data = [0u8; 0xff4];
+        unsafe{
+            core::ptr::copy_nonoverlapping(blk_data.as_ptr(), data.as_mut_ptr(), blk_data.len());
+        }
+        csum = ext4_crc32c(csum, &data[..], 0xff4);
         csum
     }
 
@@ -1419,8 +1419,8 @@ impl Ext4DirEntryTail{
         }
     }
 
-    pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry){
-        let csum = diren.ext4_dir_get_csum(s);
+    pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8]){
+        let csum = diren.ext4_dir_get_csum(s, blk_data);
         self.checksum = csum;
     }
 

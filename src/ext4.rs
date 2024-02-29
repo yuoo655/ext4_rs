@@ -193,10 +193,10 @@ impl Ext4 {
             search_path = ext4_path_skip(search_path, "/");
             len = ext4_path_check(search_path, &mut is_goal);
 
-            println!(
-                "search_path {:?} len {:?} is_goal {:?}",
-                search_path, len, is_goal
-            );
+            // println!(
+            //     "search_path {:?} len {:?} is_goal {:?}",
+            //     search_path, len, is_goal
+            // );
 
             let r = ext4_dir_find_entry(
                 &mut search_parent,
@@ -524,10 +524,10 @@ pub fn ext4_dir_try_insert_entry(
                 // set tail csum
                 let mut tail = Ext4DirEntryTail::from(&mut dst_blk.block_data, BLOCK_SIZE).unwrap();
                 let block_device = parent.fs().block_device.clone();
-                tail.ext4_dir_set_csum(&parent.fs().super_block, &de);
+                tail.ext4_dir_set_csum(&parent.fs().super_block, &de, &dst_blk.block_data[offset..]);
 
                 let parent_de = Ext4DirEntry::try_from(&dst_blk.block_data[..]).unwrap();
-                tail.ext4_dir_set_csum(&parent.fs().super_block, &parent_de);
+                tail.ext4_dir_set_csum(&parent.fs().super_block, &parent_de, &dst_blk.block_data[..]);
 
                 let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
                 copy_diren_tail_to_array(&tail, &mut dst_blk.block_data, tail_offset);
@@ -694,7 +694,7 @@ pub fn ext4_dir_find_entry(
     name_len: u32,
     result: &mut Ext4DirSearchResult,
 ) -> usize {
-    println!("ext4_dir_find_entry parent {:x?} {:?}",parent.inode_num,  name);
+    // println!("ext4_dir_find_entry parent {:x?} {:?}",parent.inode_num,  name);
     let mut iblock = 0;
     let mut fblock: ext4_fsblk_t = 0;
 
@@ -1387,7 +1387,7 @@ pub fn ext4_ialloc_alloc_inode(fs: Arc<Ext4>, index: &mut u32, is_dir: bool) {
             let inode_num = bgid * inodes_per_group + (idx_in_bg + 1);
             *index = inode_num;
 
-            println!("alloc inode {:x?}", inode_num);
+            // println!("alloc inode {:x?}", inode_num);
             return;
         }
 
