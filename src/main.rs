@@ -81,13 +81,15 @@ pub fn main() {
     // file
     println!("----write test----");
     for i in 0..20{
+        const write_size: usize = 4096 * 10;
         let path = format!("write_{}.txt", i);
         let path = path.as_str();
         let mut ext4_file = Ext4File::new();
         ext4.ext4_open(&mut ext4_file, path, "w+", true);
-        let write_data: [u8; 8192] = [0x41 + i as u8; 8192];
-        ext4.ext4_file_write(&mut ext4_file, &write_data, 8192);
-        
+
+        let write_data: [u8; write_size] = [0x41 + i as u8; write_size];
+        ext4.ext4_file_write(&mut ext4_file, &write_data, write_size);
+
 
         // test
         ext4.ext4_open(&mut ext4_file, path, "r+", false);

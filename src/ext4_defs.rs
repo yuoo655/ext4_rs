@@ -353,8 +353,13 @@ impl Ext4Inode {
         self.gid = gid;
     }
 
-    pub fn ext4_inode_set_size(&mut self, size: u32) {
-        self.size = size;
+    pub fn ext4_inode_set_size(&mut self, size: u64) {
+        self.size = ((size << 32) >> 32)as u32;
+        self.size_hi = (size >> 32) as u32;
+    }
+
+    pub fn ext4_inode_get_size(&mut self) -> u64{
+        self.size as u64 | ((self.size_hi as u64) << 32)
     }
 
     pub fn ext4_inode_set_access_time(&mut self, access_time: u32) {

@@ -180,7 +180,7 @@ impl Ext4 {
 
         // load root inode
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
-        
+
         // if !parent_inode.is_none() {
         //     parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
         // }
@@ -289,7 +289,10 @@ impl Ext4 {
                 file.inode = dir_search_result.dentry.inode;
                 return;
             } else {
-                search_parent = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), dir_search_result.dentry.inode);
+                search_parent = Ext4InodeRef::get_inode_ref(
+                    self.self_ref.clone(),
+                    dir_search_result.dentry.inode,
+                );
                 search_path = &search_path[len..];
             }
         }
@@ -346,7 +349,7 @@ impl Ext4 {
         while size >= block_size {
             while iblk_idx < iblock_last {
                 if iblk_idx < ifile_blocks {
-                    ext4_fs_append_inode_dblk(&mut inode_ref, iblk_idx as u32, &mut fblk);
+                    ext4_fs_append_inode_dblk(&mut inode_ref, &mut (iblk_idx as u32), &mut fblk);
                 }
 
                 iblk_idx += 1;
@@ -434,7 +437,7 @@ pub fn ext4_dir_add_entry(
     let mut fblock: ext4_fsblk_t = 0;
 
     while iblock < total_blocks {
-        ext4_fs_get_inode_dblk_idx(parent, iblock, &mut fblock, false);
+        ext4_fs_get_inode_dblk_idx(parent, &mut iblock, &mut fblock, false);
 
         // load_block
         let mut data = parent
@@ -524,10 +527,18 @@ pub fn ext4_dir_try_insert_entry(
                 // set tail csum
                 let mut tail = Ext4DirEntryTail::from(&mut dst_blk.block_data, BLOCK_SIZE).unwrap();
                 let block_device = parent.fs().block_device.clone();
-                tail.ext4_dir_set_csum(&parent.fs().super_block, &de, &dst_blk.block_data[offset..]);
+                tail.ext4_dir_set_csum(
+                    &parent.fs().super_block,
+                    &de,
+                    &dst_blk.block_data[offset..],
+                );
 
                 let parent_de = Ext4DirEntry::try_from(&dst_blk.block_data[..]).unwrap();
-                tail.ext4_dir_set_csum(&parent.fs().super_block, &parent_de, &dst_blk.block_data[..]);
+                tail.ext4_dir_set_csum(
+                    &parent.fs().super_block,
+                    &parent_de,
+                    &dst_blk.block_data[..],
+                );
 
                 let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
                 copy_diren_tail_to_array(&tail, &mut dst_blk.block_data, tail_offset);
@@ -580,18 +591,25 @@ pub fn ext4_dir_write_entry(
 
 pub fn ext4_fs_append_inode_dblk(
     inode_ref: &mut Ext4InodeRef,
-    iblock: ext4_lblk_t,
+    iblock: &mut ext4_lblk_t,
     fblock: &mut ext4_fsblk_t,
 ) {
-    let inode_size = inode_ref.fs().super_block.inode_size();
+    let inode_size = inode_ref.inner.inode.ext4_inode_get_size();
+    let block_size = BLOCK_SIZE as u64;
+
+    *iblock = ((inode_size + block_size - 1) / block_size) as u32;
 
     let mut current_block: ext4_fsblk_t;
     let mut current_fsblk: ext4_fsblk_t = 0;
-
-    ext4_extent_get_blocks(inode_ref, iblock, 1, &mut current_fsblk, true, &mut 0);
+    ext4_extent_get_blocks(inode_ref, *iblock, 1, &mut current_fsblk, true, &mut 0);
 
     current_block = current_fsblk;
     *fblock = current_block;
+
+    inode_ref
+        .inner
+        .inode
+        .ext4_inode_set_size(inode_size + BLOCK_SIZE as u64);
 
     // println!("fblock {:x?}", fblock);
 }
@@ -630,7 +648,6 @@ pub fn ext4_fs_inode_blocks_init(inode_ref: &mut Ext4InodeRef) {
 }
 
 pub fn ext4_fs_alloc_inode(child_inode_ref: &mut Ext4InodeRef, filetype: u8) -> usize {
-    
     let mut is_dir = false;
 
     let inode_size = child_inode_ref.fs().super_block.inode_size();
@@ -702,7 +719,7 @@ pub fn ext4_dir_find_entry(
     let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
 
     while iblock < total_blocks {
-        ext4_fs_get_inode_dblk_idx(parent, iblock, &mut fblock, false);
+        ext4_fs_get_inode_dblk_idx(parent, &mut iblock, &mut fblock, false);
 
         // load_block
         let mut data = parent
@@ -735,57 +752,65 @@ pub fn ext4_extent_get_blocks(
     create: bool,
     blocks_count: &mut u32,
 ) {
+    *result = 0;
+    *blocks_count = 0;
+    
+    let mut path: Option<Vec<Ext4ExtentPath>> = None;
+    let err = ext4_find_extent(inode_ref, iblock, &mut path, 0);
+
     let inode = &inode_ref.inner.inode;
+    // 确认ext4_find_extent成功执行
+    if err != EOK {
+        return;
+    }
 
-    let mut vec_extent_path: Vec<Ext4ExtentPath> = Vec::with_capacity(3);
-    let mut extent_path = Ext4ExtentPath::default();
-    let mut newex: Ext4Extent = Ext4Extent::default();
-    let mut newblock: ext4_fsblk_t;
+    let depth = unsafe { *ext4_inode_hdr(inode) }.depth as usize;
+    let mut path = path.unwrap();
 
-    ext4_find_extent(inode, iblock, &mut extent_path, &mut vec_extent_path);
-
-    let depth = unsafe { *ext4_inode_hdr(inode) }.depth;
-    let extent = vec_extent_path[depth as usize].extent;
-
-    if !extent.is_null() {
-        let ex = unsafe { *extent };
+    if !path[depth].extent.is_null() {
+        let ex = unsafe { *path[depth].extent };
         let ee_block = ex.first_block;
-        let ee_start = ex.start_lo | (((ex.start_hi as u32) << 31) << 1);
-        let ee_len: u16 = ex.block_count;
-        if iblock >= ee_block && iblock <= (ee_block + ee_len as u32) {
-            let newblock = iblock - ee_block + ee_start;
-            *result = newblock as u64;
-            return;
+        let ee_start = ext4_ext_pblock(&ex);
+        let ee_len = ext4_ext_get_actual_len(&ex);
+
+        if iblock >= ee_block && iblock < ee_block + ee_len as u32 {
+            let allocated = ee_len - (iblock - ee_block) as u16;
+            *blocks_count = allocated as u32;
+
+            if !create || ext4_ext_is_unwritten(&ex) {
+                *result = (iblock - ee_block + ee_start) as u64;
+                return;
+            }
         }
     }
 
-    // println!("extent is null");
+    // 如果没有找到对应的extent，并且create为true，则需要分配和插入新的extent
+    if create {
+        let mut allocated: u32 = 0;
+        let next = EXT_MAX_BLOCKS;
 
-    // 如果没有找到extent，或者找到的extent不包含iblock，需要分配新的extent
-    let mut allocated: u32 = 0;
-    let next = EXT_MAX_BLOCKS;
+        allocated = next - iblock;
+        if allocated > max_blocks {
+            allocated = max_blocks;
+        }
 
-    allocated = next - iblock;
+        let mut newex: Ext4Extent = Ext4Extent::default();
 
-    if allocated > max_blocks {
-        allocated = max_blocks;
+        let goal = 0;
+
+        let mut alloc_block = 0;
+        ext4_balloc_alloc_block(inode_ref, goal as u64, &mut alloc_block);
+
+        *result = alloc_block;
+
+        // 创建并插入新的extent
+        newex.first_block = iblock;
+        newex.start_lo = alloc_block as u32 & 0xffffffff;
+        newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
+        newex.block_count = allocated as u16;
+
+        ext4_ext_insert_extent(inode_ref, &mut path[0], &newex, 0);
     }
-
-    let goal = 0;
-
-    let mut alloc_block = 0;
-    ext4_balloc_alloc_block(inode_ref, goal as u64, &mut alloc_block);
-
-    newex.first_block = iblock;
-    newex.start_lo = alloc_block as u32 & 0xffffffff;
-    newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
-    newex.block_count = 2 as u16;
-
-    ext4_ext_insert_extent(inode_ref, &mut vec_extent_path[0], &newex, 0);
-
-    newblock = ext4_ext_pblock(&unsafe { *(vec_extent_path[0].extent) }) as u64;
-
-    *result = newblock;
 }
 
 pub fn ext_inode_hdr(inode: &Ext4Inode) -> *const Ext4ExtentHeader {
@@ -870,6 +895,21 @@ pub fn ext4_ext_mark_unwritten(ext: *mut Ext4Extent) {
 }
 
 pub fn ext4_ext_can_append(ex1: &Ext4Extent, ex2: &Ext4Extent) -> bool {
+    // 检查是否可以将ex2合并到ex1的后面
+    // println!(
+    //     "\n\npblock1={:x?} pblock2={:x?}",
+    //     ext4_ext_pblock(ex1),
+    //     ext4_ext_pblock(ex2)
+    // );
+    // println!(
+    //     "len1={:x?} len2={:x?}",
+    //     ext4_ext_get_actual_len(ex1),
+    //     ext4_ext_get_actual_len(ex2)
+    // );
+    // println!(
+    //     "first_block1={:x?} first_block2={:x?}",
+    //     ex1.first_block, ex2.first_block
+    // );
     if ext4_ext_pblock(ex1) + ext4_ext_get_actual_len(ex1) as u32 != ext4_ext_pblock(ex2) {
         return false;
     }
@@ -941,8 +981,6 @@ pub fn ext4_ext_insert_leaf(
     diskblock = newext.start_lo;
     diskblock |= ((newext.start_hi as u32) << 31) << 1;
 
-    // println!("insert newext {:x?}", newext);
-
     unsafe {
         if !ex.is_null() && ext4_ext_can_append(&*(path.extent), newext) {
             if ext4_ext_is_unwritten(&*(path.extent)) {
@@ -977,10 +1015,7 @@ pub fn ext4_ext_insert_leaf(
                 *need_split = true;
                 return EIO;
             } else {
-                (*(path.extent)).block_count = newext.block_count;
-                (*(path.extent)).start_lo = newext.start_lo;
-                (*(path.extent)).start_hi = newext.start_hi;
-                (*(path.extent)).first_block = newext.first_block;
+                *(path.extent) = *newext;
             }
         }
     }
@@ -988,22 +1023,15 @@ pub fn ext4_ext_insert_leaf(
     unsafe {
         if (*eh).entries_count == (*eh).max_entries_count {
             *need_split = true;
+            *(path.extent) = *newext;
 
-            (*(path.extent)).block_count = newext.block_count;
-            (*(path.extent)).start_lo = newext.start_lo;
-            (*(path.extent)).start_hi = newext.start_hi;
-            (*(path.extent)).first_block = newext.first_block;
             (*path).p_block = diskblock as u64;
             return EIO;
         } else {
             if ex.is_null() {
                 let first_extent = ext_first_extent(eh);
                 (*path).extent = first_extent;
-
-                (*(path.extent)).block_count = newext.block_count;
-                (*(path.extent)).start_lo = newext.start_lo;
-                (*(path.extent)).start_hi = newext.start_hi;
-                (*(path.extent)).first_block = newext.first_block;
+                *(path.extent) = *newext;
             } else if newext.first_block > (*(path.extent)).first_block {
                 // insert after
                 let next_extent = ex.add(1);
@@ -1012,23 +1040,12 @@ pub fn ext4_ext_insert_leaf(
             }
         }
 
-        (*(path.extent)).first_block = newext.first_block;
-        (*(path.extent)).block_count = newext.block_count;
-        (*(path.extent)).start_lo = newext.start_lo;
-        (*(path.extent)).start_hi = newext.start_hi;
+        *(path.extent) = *newext;
         (*eh).entries_count += 1;
     }
     unsafe {
-        (*(path.extent)).first_block = newext.first_block;
-        (*(path.extent)).block_count = newext.block_count;
-
-        (*(path.extent)).start_lo = newext.start_lo;
-        (*(path.extent)).start_hi = newext.start_hi;
-        // println!("--------------entries_count+=1\n");
-        // (*eh).entries_count += 1;
+        *(path.extent) = *newext;
     }
-
-
 
     return EOK;
 }
@@ -1051,6 +1068,7 @@ pub fn ext4_add_extent(
 ) {
     let extent_header = Ext4ExtentHeader::try_from(data).unwrap();
     let extent_entries = extent_header.entries_count;
+    // println!("extent_entries {:x?}", extent_entries);
     if depth == 0 {
         for en in 0..extent_entries {
             let idx = (3 + en * 3) as usize;
@@ -1097,68 +1115,44 @@ pub fn ext4_idx_pblock(idx: *mut Ext4ExtentIndex) -> u64 {
     return pblock;
 }
 
-// pub fn ext4_find_extent_old(
-//     inode: &Ext4Inode,
-//     iblock: ext4_lblk_t,
-//     v: &mut Vec<Ext4ExtentPathOld>,
-// )
-// {
-//     let eh = &inode.block as *const [u32; 15] as *mut Ext4ExtentHeader;
-
-//     // println!("ext4_find_extent header {:x?}", unsafe{*eh});
-//     let extent_header = Ext4ExtentHeader::try_from(&inode.block[..]).unwrap();
-
-//     let depth = extent_header.depth;
-
-//     let mut extent_path = Ext4ExtentPathOld::default();
-//     extent_path.depth = depth;
-//     extent_path.header = eh;
-
-//     // depth = 0
-//     let r = ext4_ext_binsearch_old(&mut extent_path, iblock);
-//     // println!("ext4_find_extent r {:x?}", r);
-
-//     let extent = unsafe { *extent_path.extent };
-//     let pblock = extent.start_lo | (((extent.start_hi as u32) << 31) << 1);
-//     extent_path.p_block = pblock;
-
-//     // println!("ext4_find_extent extent {:x?}", extent);
-//     v.push(extent_path);
-// }
-
-pub fn ext4_find_extent(
-    inode: &Ext4Inode,
-    iblock: ext4_lblk_t,
-    orig_path: &mut Ext4ExtentPath,
-    path: &mut Vec<Ext4ExtentPath>,
+fn ext4_find_extent(
+    inode_ref: &mut Ext4InodeRef,
+    block: ext4_lblk_t,
+    orig_path: &mut Option<Vec<Ext4ExtentPath>>,
+    flags: u32,
 ) -> usize {
-    let mut block_nr: ext4_fsblk_t;
-    let mut ppos = 0 as usize;
-    
+    let inode = &inode_ref.inner.inode;
+    let mut eh: &Ext4ExtentHeader;
+    let mut buf_block: ext4_fsblk_t = 0;
+    let mut path = orig_path.take(); // Take the path out of the Option, which may replace it with None
+    let depth = unsafe { *ext4_inode_hdr(inode) }.depth;
+
+    let mut ppos = 0;
+    let mut i: u16;
+
     let eh = &inode.block as *const [u32; 15] as *mut Ext4ExtentHeader;
-    let extent_header = Ext4ExtentHeader::try_from(&inode.block[..]).unwrap();
-    let depth = extent_header.depth;
-    let mut i = depth;
-    
-    // 如果没有传入路径，分配一个新的路径
-    if path.is_empty() {
+
+    if let Some(ref mut p) = path {
+        if depth > p[0].maxdepth {
+            p.clear();
+        }
+    }
+    if path.is_none() {
         let path_depth = depth + 1;
-        let mut vec = vec![Ext4ExtentPath::default(); (path_depth + 1) as usize];
-        path.append(&mut vec);
-        path[0].maxdepth = path_depth;
+        path = Some(vec![Ext4ExtentPath::default(); path_depth as usize + 1]);
+        path.as_mut().unwrap()[0].maxdepth = path_depth;
     }
 
+    let path = path.as_mut().unwrap();
     path[0].header = eh;
-    path[0].p_block = 0;
 
+    i = depth;
     while i > 0 {
-        ext4_ext_binsearch_idx(&mut path[ppos], iblock);
+        ext4_ext_binsearch_idx(&mut path[ppos], block);
         path[ppos].p_block = ext4_idx_pblock(path[ppos].index);
-        path[ppos].depth = i as u16;
+        path[ppos].depth = i;
         path[ppos].extent = core::ptr::null_mut();
-
-        // 获取索引指向的子节点的物理块号
-        block_nr = path[ppos].p_block;
+        buf_block = path[ppos].p_block;
 
         i -= 1;
         ppos += 1;
@@ -1168,27 +1162,17 @@ pub fn ext4_find_extent(
     path[ppos].extent = core::ptr::null_mut();
     path[ppos].index = core::ptr::null_mut();
 
-
-    let r = ext4_ext_binsearch(&mut path[ppos], iblock);
-
-
-    // 获取最后一个节点的extent
-    let ex = ext4_ext_find_extent(eh, iblock);
-
-    // 设置最后一个元素的extent
-    path[depth as usize].extent = ex;
-
+    ext4_ext_binsearch(&mut path[ppos], block);
     if !path[ppos].extent.is_null() {
-        path[ppos].p_block = ext4_ext_pblock(&unsafe{*(path[ppos].extent)}) as u64;
+        path[ppos].p_block = ext4_ext_pblock(&unsafe { *(path[ppos].extent) }) as u64;
     }
 
-    return EOK;
+    *orig_path = Some(path.clone());
+
+    EOK
 }
 
-pub fn ext4_ext_find_extent(
-    eh: *mut Ext4ExtentHeader,
-    block: ext4_lblk_t,
-) -> *mut Ext4Extent {
+pub fn ext4_ext_find_extent(eh: *mut Ext4ExtentHeader, block: ext4_lblk_t) -> *mut Ext4Extent {
     // 初始化一些变量
     let mut low: i32;
     let mut high: i32;
@@ -1237,7 +1221,7 @@ pub fn ext4_ext_find_extent(
 }
 pub fn ext4_fs_get_inode_dblk_idx(
     inode_ref: &mut Ext4InodeRef,
-    iblock: ext4_lblk_t,
+    iblock: &mut ext4_lblk_t,
     fblock: &mut ext4_fsblk_t,
     extent_create: bool,
 ) -> usize {
@@ -1247,7 +1231,7 @@ pub fn ext4_fs_get_inode_dblk_idx(
     let mut blocks_count = 0;
     ext4_extent_get_blocks(
         inode_ref,
-        iblock,
+        *iblock,
         1,
         &mut current_fsblk,
         false,
@@ -1262,7 +1246,7 @@ pub fn ext4_fs_get_inode_dblk_idx(
 
 pub fn ext4_fs_get_inode_dblk_idx_internal(
     inode_ref: &mut Ext4InodeRef,
-    iblock: ext4_lblk_t,
+    iblock: &mut ext4_lblk_t,
     fblock: &mut ext4_fsblk_t,
     extent_create: bool,
     support_unwritten: bool,
@@ -1273,7 +1257,7 @@ pub fn ext4_fs_get_inode_dblk_idx_internal(
     let mut blocks_count = 0;
     ext4_extent_get_blocks(
         inode_ref,
-        iblock,
+        *iblock,
         1,
         &mut current_fsblk,
         extent_create,
@@ -1348,7 +1332,7 @@ pub fn ext4_ialloc_alloc_inode(fs: Arc<Ext4>, index: &mut u32, is_dir: bool) {
 
             let mut idx_in_bg = 0 as u32;
 
-            ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);            
+            ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);
             ext4_bmap_bit_set(&mut bitmap_data, idx_in_bg);
 
             // update bitmap in disk
@@ -1442,11 +1426,11 @@ pub fn ext4_balloc_alloc_block(
 
     /* Update inode blocks (different block size!) count */
     let mut inode_blocks = inode_ref.inner.inode.ext4_inode_get_blocks_count();
-    inode_blocks += 16;
+    inode_blocks += 8;
     inode_ref
         .inner
         .inode
-        .ext4_inode_set_blocks_count(inode_blocks  as u32);
+        .ext4_inode_set_blocks_count(inode_blocks as u32);
     inode_ref.write_back_inode();
 
     /* Update block group free blocks count */
