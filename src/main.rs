@@ -74,15 +74,24 @@ pub fn main() {
     ext4.ext4_open(&mut ext4_file, path, "r+", false);
     println!("ext4_file inode {:?}", ext4_file.inode);
     let data = ext4.ext4_file_read(&mut ext4_file);
-    // println!("read data sample {:x?}", &data[0..10]);
+    println!("read data sample {:x?}", &data[0..10]);
 
+
+    // dir
+    println!("----mkdir----");
+    for i in 0..10{
+        let path = format!("dirtest{}", i);
+        let path = path.as_str();
+        let mut ext4_file = Ext4File::new();
+        ext4.ext4_open(&mut ext4_file, path, "w", false);
+    }
 
     // write test
     // file
-    println!("----write test----");
-    for i in 0..20{
+    println!("----write file in dir----");
+    for i in 0..10{
         const write_size: usize = 4096 * 10;
-        let path = format!("write_{}.txt", i);
+        let path = format!("dirtest{}/write_{}.txt", i, i);
         let path = path.as_str();
         let mut ext4_file = Ext4File::new();
         ext4.ext4_open(&mut ext4_file, path, "w+", true);
@@ -97,12 +106,5 @@ pub fn main() {
         println!("read data sample {:x?}", &data[0..10]);
     }
     
-    // dir
-    println!("----dir test----");
-    for i in 0..20{
-        let path = format!("dirtest{}", i);
-        let path = path.as_str();
-        let mut ext4_file = Ext4File::new();
-        ext4.ext4_open(&mut ext4_file, path, "w", false);
-    }
+
 }

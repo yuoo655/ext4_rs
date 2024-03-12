@@ -272,8 +272,9 @@ impl Ext4 {
                     break;
                 }
 
+                ext4_fs_put_inode_ref_csum(&mut search_parent);
                 ext4_fs_put_inode_ref_csum(&mut child_inode_ref);
-                ext4_fs_put_inode_ref_csum(parent_inode);
+                ext4_fs_put_inode_ref_csum(parent_inode);                
 
                 continue;
             }
@@ -368,9 +369,9 @@ impl Ext4 {
             self.block_device
                 .write_offset(offset, &data[idx..(idx + BLOCK_SIZE as usize)]);
         }
-        inode_ref.inner.inode.size = fblock_count as u32 * BLOCK_SIZE as u32;
+        // inode_ref.inner.inode.size = fblock_count as u32 * BLOCK_SIZE as u32;
         inode_ref.write_back_inode();
-        let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
+        // let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
         root_inode_ref.write_back_inode();
     }
@@ -390,6 +391,7 @@ pub fn ext4_link(
     name: &str,
     name_len: u32,
 ) -> usize {
+    // println!("link parent inode {:x?} child inode {:x?} name {:?}", parent.inode_num, child.inode_num, name);
     /* Add entry to parent directory */
     let r = ext4_dir_add_entry(parent, child, name, name_len);
 
@@ -410,7 +412,9 @@ pub fn ext4_link(
         child_inode_ref.inner.inode = child.inner.inode.clone();
 
         let r = ext4_dir_add_entry(&mut child_inode_ref, child, ".", 1);
-        let r = ext4_dir_add_entry(&mut child_inode_ref, child, "..", 2);
+        child.inner.inode.size = child_inode_ref.inner.inode.size;
+        child.inner.inode.block = child_inode_ref.inner.inode.block;
+        let r = ext4_dir_add_entry(&mut child_inode_ref, parent, "..", 2);
 
         child.inner.inode.links_count = 2;
         parent.inner.inode.links_count += 1;
@@ -430,13 +434,14 @@ pub fn ext4_dir_add_entry(
 ) -> usize {
     let mut iblock = 0;
     let block_size = parent.fs().super_block.block_size();
-    let inode_size = parent.fs().super_block.inode_size_file(&parent.inner.inode);
+    let inode_size = parent.inner.inode.ext4_inode_get_size();
+    // let inode_size = parent.fs().super_block.inode_size_file(&parent.inner.inode);
     let total_blocks = inode_size as u32 / block_size;
     let mut success = false;
 
     let mut fblock: ext4_fsblk_t = 0;
 
-    // println!("inode {:x?} inode_size {:x?}", parent.inode_num, inode_size);
+    // println!("ext4_dir_add_entry parent inode {:x?} inode_size {:x?}", parent.inode_num, inode_size);
     while iblock < total_blocks {
         ext4_fs_get_inode_dblk_idx(parent, &mut iblock, &mut fblock, false);
 
@@ -479,15 +484,10 @@ pub fn ext4_dir_add_entry(
     }
 
     /* No free block found - needed to allocate next data block */
-
-    // println!("/* No free block found - needed to allocate next data block */ parent inode {:x?} path {:?}", parent.inode_num, path);
     iblock = 0;
     fblock = 0;
 
     ext4_fs_append_inode_dblk(parent, &mut (iblock as u32), &mut fblock);
-
-    parent.inner.inode.size += BLOCK_SIZE as u32;
-    parent.write_back_inode();
 
     /* Load new block */
     let block_device = parent.fs().block_device.clone();
@@ -524,6 +524,11 @@ pub fn ext4_dir_add_entry(
     let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
     copy_diren_tail_to_array(&tail, &mut ext4_block.block_data, tail_offset);
 
+    tail.ext4_dir_set_csum(
+        &parent.fs().super_block,
+        &new_entry,
+        &ext4_block.block_data[..],
+    );
 
     ext4_block.sync_blk_to_disk(block_device.clone());
 
@@ -664,6 +669,11 @@ pub fn ext4_fs_append_inode_dblk(
         .inode
         .ext4_inode_set_size(inode_size + BLOCK_SIZE as u64);
 
+    inode_ref.write_back_inode();
+
+    // let mut inode_ref = Ext4InodeRef::get_inode_ref(inode_ref.fs().self_ref.clone(), inode_ref.inode_num);
+
+    // println!("ext4_fs_append_inode_dblk inode {:x?} inode_size {:x?}", inode_ref.inode_num, inode_ref.inner.inode.size);
     // println!("fblock {:x?}", fblock);
 }
 
@@ -1327,6 +1337,9 @@ pub fn ext4_dir_find_in_block(
     let mut offset = 0;
 
     while offset < block.block_data.len() {
+
+
+
         let de = Ext4DirEntry::try_from(&block.block_data[offset..]).unwrap();
 
         offset = offset + de.entry_len as usize;
