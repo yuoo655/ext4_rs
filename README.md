@@ -1,4 +1,4 @@
-# a cross-platform rust ext4 crate
+# a cross-platform rust ext4 crate support read/write/mkdir
 
 # read/write example
 
