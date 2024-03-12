@@ -30,7 +30,7 @@ let disk = Arc::new(Disk {});
 let ext4 = Ext4::open(disk);
 ```
 
-## read/write
+## read/write/mkdir
 
 ```rust
 let path =
@@ -40,6 +40,7 @@ ext4.ext4_open(&mut ext4_file, path, "r+", false);
 println!("ext4_file inode {:?}", ext4_file.inode);
 let data = ext4.ext4_file_read(&mut ext4_file);
 println!("read data sample {:x?}", &data[0..10]);
+
 // dir
 println!("----mkdir----");
 for i in 0..10{
@@ -48,6 +49,7 @@ for i in 0..10{
     let mut ext4_file = Ext4File::new();
     ext4.ext4_open(&mut ext4_file, path, "w", false);
 }
+
 // write test
 // file
 println!("----write file in dir----");
