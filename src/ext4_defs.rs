@@ -1412,12 +1412,15 @@ impl Ext4DirEntryTail{
             let ptr = data as *mut [u8] as *mut u8;
             let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail);
             if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
+                println!("t.reserved_zero1");
                 return None;
             }
             if t.rec_len.to_le() != core::mem::size_of::<Ext4DirEntryTail>() as u16 {
+                println!("t.rec_len");
                 return None;
             }
             if t.reserved_ft != 0xDE {
+                println!("t.reserved_ft");
                 return None;
             }
             Some(t)

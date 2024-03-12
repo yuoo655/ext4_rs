@@ -436,6 +436,7 @@ pub fn ext4_dir_add_entry(
 
     let mut fblock: ext4_fsblk_t = 0;
 
+    // println!("inode {:x?} inode_size {:x?}", parent.inode_num, inode_size);
     while iblock < total_blocks {
         ext4_fs_get_inode_dblk_idx(parent, &mut iblock, &mut fblock, false);
 
@@ -455,7 +456,8 @@ pub fn ext4_dir_add_entry(
 
         if r == EOK {
             success = true;
-            break;
+            return EOK;
+            // break;
         }
         let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
         let ext4_blk = Ext4Block {
@@ -475,6 +477,57 @@ pub fn ext4_dir_add_entry(
 
         iblock += 1;
     }
+
+    /* No free block found - needed to allocate next data block */
+
+    // println!("/* No free block found - needed to allocate next data block */ parent inode {:x?} path {:?}", parent.inode_num, path);
+    iblock = 0;
+    fblock = 0;
+
+    ext4_fs_append_inode_dblk(parent, &mut (iblock as u32), &mut fblock);
+
+    parent.inner.inode.size += BLOCK_SIZE as u32;
+    parent.write_back_inode();
+
+    /* Load new block */
+    let block_device = parent.fs().block_device.clone();
+    let mut data = block_device.read_offset(fblock as usize * BLOCK_SIZE);
+    let mut ext4_block = Ext4Block {
+        logical_block_id: iblock,
+        disk_block_id: fblock,
+        block_data: &mut data,
+        dirty: false,
+    };
+
+    let mut new_entry = Ext4DirEntry::default();
+    let el = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
+    ext4_dir_write_entry(&mut new_entry, el as u16, &child, path, len);
+
+    copy_dir_entry_to_array(&new_entry, &mut ext4_block.block_data, 0);
+
+    // init tail
+    let ptr = ext4_block.block_data.as_mut_ptr();
+    let mut tail = unsafe{*(ptr.add(BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail)};
+    tail.rec_len = size_of::<Ext4DirEntryTail>() as u16;
+    tail.reserved_ft = 0xDE;
+    tail.reserved_zero1 = 0;
+    tail.reserved_zero2 = 0;
+
+
+    tail.ext4_dir_set_csum(
+        &parent.fs().super_block,
+        &new_entry,
+        &ext4_block.block_data[..],
+    );
+
+
+    let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
+    copy_diren_tail_to_array(&tail, &mut ext4_block.block_data, tail_offset);
+
+
+    ext4_block.sync_blk_to_disk(block_device.clone());
+
+	// struct ext4_block b;
 
     EOK
 }
