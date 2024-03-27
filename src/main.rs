@@ -67,7 +67,7 @@ pub fn main() {
     let disk = Arc::new(Disk {});
     let ext4 = Ext4::open(disk);
 
-    // read test
+    // read regular file
     let path =
         "/test_files/1.txt";
     let mut ext4_file = Ext4File::new();
@@ -76,14 +76,21 @@ pub fn main() {
     let data = ext4.ext4_file_read(&mut ext4_file);
     println!("read data sample {:x?}", &data[0..10]);
 
+    // read link
+    let path =
+    "/test_files/linktest";
+    let mut ext4_file = Ext4File::new();
+    ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    println!("ext4_file inode {:?}", ext4_file.inode);
+    let data = ext4.ext4_file_read(&mut ext4_file);
+    println!("read data sample {:x?}", &data[0..10]);
 
     // dir
     println!("----mkdir----");
     for i in 0..10{
         let path = format!("dirtest{}", i);
         let path = path.as_str();
-        let mut ext4_file = Ext4File::new();
-        ext4.ext4_open(&mut ext4_file, path, "w", false);
+        ext4.ext4_dir_mk(&path);
     }
 
     // write test

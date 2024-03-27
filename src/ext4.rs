@@ -152,6 +152,30 @@ impl Ext4 {
         self.ext4_generic_open(file, path, iflags, filetype.bits(), &mut root_inode_ref);
     }
 
+    pub fn ext4_dir_mk(&self, path: &str) {
+        let mut file = Ext4File::new();
+        let flags = "w";
+
+        let mut iflags = 0;
+        let filetype = DirEntryType::EXT4_DE_DIR;
+
+        // get mount point
+        let mut ptr = Box::new(self.mount_point.clone());
+        file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
+
+        // get open flags
+        iflags = self.ext4_parse_flags(flags).unwrap();
+
+        if iflags & O_CREAT != 0 {
+            self.ext4_trans_start();
+        }
+
+        let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
+
+        // println!("filetype {:x?}", filetype.bits());
+        self.ext4_generic_open(&mut file, path, iflags, filetype.bits(), &mut root_inode_ref);
+    }
+
     pub fn ext4_generic_open(
         &self,
         file: &mut Ext4File,
