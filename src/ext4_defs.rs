@@ -1412,15 +1412,15 @@ impl Ext4DirEntryTail{
             let ptr = data as *mut [u8] as *mut u8;
             let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail);
             if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
-                println!("t.reserved_zero1");
+                log::info!("t.reserved_zero1");
                 return None;
             }
             if t.rec_len.to_le() != core::mem::size_of::<Ext4DirEntryTail>() as u16 {
-                println!("t.rec_len");
+                log::info!("t.rec_len");
                 return None;
             }
             if t.reserved_ft != 0xDE {
-                println!("t.reserved_ft");
+                log::info!("t.reserved_ft");
                 return None;
             }
             Some(t)
@@ -1640,7 +1640,7 @@ pub fn ext4_ext_binsearch_old(path: &mut Ext4ExtentPathOld, block: u32) -> bool 
 
 
 pub fn ext4_fs_correspond_inode_mode(filetype: u8) -> u32 {
-    // println!("filetype: {:?}", filetype);
+    // log::info!("filetype: {:?}", filetype);
     let file_type = DirEntryType::from_bits(filetype).unwrap();
     match file_type {
         DirEntryType::EXT4_DE_DIR => EXT4_INODE_MODE_DIRECTORY as u32,

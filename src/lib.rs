@@ -14,6 +14,8 @@ pub use prelude::*;
 pub use ext4_defs::*;
 pub use utils::*;
 
+pub const BLOCK_SIZE: usize = 4096;
+
 extern crate alloc;
 
 #[cfg(test)]

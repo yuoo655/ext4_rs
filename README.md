@@ -39,21 +39,21 @@ let path =
     "/test_files/1.txt";
 let mut ext4_file = Ext4File::new();
 ext4.ext4_open(&mut ext4_file, path, "r+", false);
-println!("ext4_file inode {:?}", ext4_file.inode);
+log::info!("ext4_file inode {:?}", ext4_file.inode);
 let data = ext4.ext4_file_read(&mut ext4_file);
-println!("read data sample {:x?}", &data[0..10]);
+log::info!("read data sample {:x?}", &data[0..10]);
 
 // read link
 let path =
 "/test_files/linktest";
 let mut ext4_file = Ext4File::new();
 ext4.ext4_open(&mut ext4_file, path, "r+", false);
-println!("ext4_file inode {:?}", ext4_file.inode);
+log::info!("ext4_file inode {:?}", ext4_file.inode);
 let data = ext4.ext4_file_read(&mut ext4_file);
-println!("read data sample {:x?}", &data[0..10]);
+log::info!("read data sample {:x?}", &data[0..10]);
 
 // dir
-println!("----mkdir----");
+log::info!("----mkdir----");
 for i in 0..10{
     let path = format!("dirtest{}", i);
     let path = path.as_str();
@@ -62,7 +62,7 @@ for i in 0..10{
 
 // write test
 // file
-println!("----write file in dir----");
+log::info!("----write file in dir----");
 for i in 0..10{
     const write_size: usize = 4096 * 10;
     let path = format!("dirtest{}/write_{}.txt", i, i);
@@ -74,6 +74,6 @@ for i in 0..10{
     // test
     ext4.ext4_open(&mut ext4_file, path, "r+", false);
     let data = ext4.ext4_file_read(&mut ext4_file);
-    println!("read data sample {:x?}", &data[0..10]);
+    log::info!("read data sample {:x?}", &data[0..10]);
 }
 ```
