@@ -17,6 +17,16 @@ use crate::utils::*;
 pub(crate) const BASE_OFFSET: usize = 1024;
 pub(crate) const BLOCK_SIZE: usize = 4096;
 
+pub trait Jbd2: Send + Sync + Any + Debug {
+    fn load_journal(&mut self);
+    fn journal_start(&mut self);
+    fn transaction_start(&mut self);
+    fn write_transaction(&mut self, block_id: usize, block_data: Vec<u8>);
+    fn transaction_stop(&mut self);
+    fn journal_stop(&mut self);
+    fn recover(&mut self);
+}
+
 pub trait BlockDevice: Send + Sync + Any + Debug {
     fn read_offset(&self, offset: usize) -> Vec<u8>;
     fn write_offset(&self, offset: usize, data: &[u8]);
@@ -83,21 +93,6 @@ impl Ext4 {
 
         ext4
     }
-
-    // // 使用libc库定义的常量
-    // fn ext4_parse_flags(&self, flags: &str) -> Result<u32> {
-    //     let flag = flags.parse::<Ext4OpenFlags>().unwrap(); // 从字符串转换为标志
-    //     let file_flags = match flag {
-    //         Ext4OpenFlags::ReadOnly => O_RDONLY,
-    //         Ext4OpenFlags::WriteOnly => O_WRONLY,
-    //         Ext4OpenFlags::WriteCreateTrunc => O_WRONLY | O_CREAT | O_TRUNC,
-    //         Ext4OpenFlags::WriteCreateAppend => O_WRONLY | O_CREAT | O_APPEND,
-    //         Ext4OpenFlags::ReadWrite => O_RDWR,
-    //         Ext4OpenFlags::ReadWriteCreateTrunc => O_RDWR | O_CREAT | O_TRUNC,
-    //         Ext4OpenFlags::ReadWriteCreateAppend => O_RDWR | O_CREAT | O_APPEND,
-    //     };
-    //     Ok(file_flags as u32) // 转换为数值
-    // }
 
     // 使用libc库定义的常量
     fn ext4_parse_flags(&self, flags: &str) -> Result<u32> {
