@@ -116,7 +116,11 @@ pub fn main() {
     let path =
         "/test_files/1.txt";
     let mut ext4_file = Ext4File::new();
-    ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    if let Err(e) = r {
+        log::info!("open file error {:?}", e);
+        crate::panic!("open file error")
+    }
     log::info!("ext4_file inode {:?}", ext4_file.inode);
     let data = ext4.ext4_file_read(&mut ext4_file);
     log::info!("read data sample {:x?}", &data[0..10]);
@@ -125,7 +129,11 @@ pub fn main() {
     let path =
     "/test_files/linktest";
     let mut ext4_file = Ext4File::new();
-    ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    if let Err(e) = r {
+        log::info!("open file error {:?}", e);
+        crate::panic!("open file error")
+    }
     log::info!("ext4_file inode {:?}", ext4_file.inode);
     let data = ext4.ext4_file_read(&mut ext4_file);
     log::info!("read data sample {:x?}", &data[0..10]);
@@ -135,7 +143,11 @@ pub fn main() {
     for i in 0..10{
         let path = format!("dirtest{}", i);
         let path = path.as_str();
-        ext4.ext4_dir_mk(&path);
+        let r = ext4.ext4_dir_mk(&path);
+        if let Err(e) = r {
+            log::info!("dir make error {:?}", e);
+            crate::panic!("dir make error")
+        }
     }
 
     // write test
@@ -146,14 +158,23 @@ pub fn main() {
         let path = format!("dirtest{}/write_{}.txt", i, i);
         let path = path.as_str();
         let mut ext4_file = Ext4File::new();
-        ext4.ext4_open(&mut ext4_file, path, "w+", true);
+        let r = ext4.ext4_open(&mut ext4_file, path, "w+", true);
+        if let Err(e) = r {
+            log::info!("open file error {:?}", e);
+            crate::panic!("open file error")
+        }
 
         let write_data: [u8; write_size] = [0x41 + i as u8; write_size];
         ext4.ext4_file_write(&mut ext4_file, &write_data, write_size);
 
 
         // test
-        ext4.ext4_open(&mut ext4_file, path, "r+", false);
+        let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
+        if let Err(e) = r {
+            log::info!("open file error {:?}", e);
+            crate::panic!("open file error")
+        }
+        
         let data = ext4.ext4_file_read(&mut ext4_file);
         log::info!("read data sample {:x?}", &data[0..10]);
     }

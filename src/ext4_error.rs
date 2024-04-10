@@ -25,6 +25,8 @@ pub enum Errnum {
     ENOTEMPTY = 39,    /* Directory not empty */
     ENODATA   = 61,   /* No data available */
     ENOTSUP   = 95,   /* Not supported */
+    ELINKFIAL = 97,   /* Link failed */
+    EALLOCFIAL= 98,   /* Inode alloc failed */
 }
 
 /// error used in this crate
@@ -100,6 +102,6 @@ macro_rules! return_errno {
 #[macro_export]
 macro_rules! return_errno_with_message {
     ($errno: expr, $message: expr) => {
-        return Err($crate::error::Ext4Error::with_message($errno, $message))
+        return Err(Ext4Error::with_message($errno, $message))
     };
 }

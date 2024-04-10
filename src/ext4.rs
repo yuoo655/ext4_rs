@@ -12,7 +12,9 @@ use core::*;
 use super::ext4_defs::*;
 use crate::consts::*;
 use crate::prelude::*;
+use crate::return_errno_with_message;
 use crate::utils::*;
+use crate::Ext4Error;
 
 pub(crate) const BASE_OFFSET: usize = 1024;
 pub(crate) const BLOCK_SIZE: usize = 4096;
@@ -119,7 +121,7 @@ impl Ext4 {
         self.super_block = super_block;
     }
 
-    pub fn ext4_open(&self, file: &mut Ext4File, path: &str, flags: &str, file_expect: bool) {
+    pub fn ext4_open(&self, file: &mut Ext4File, path: &str, flags: &str, file_expect: bool) -> Result<usize>{
         let mut iflags = 0;
         let mut filetype = DirEntryType::EXT4_DE_UNKNOWN;
 
@@ -143,11 +145,12 @@ impl Ext4 {
 
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
 
-        // log::info!("filetype {:x?}", filetype.bits());
-        self.ext4_generic_open(file, path, iflags, filetype.bits(), &mut root_inode_ref);
+        let r = self.ext4_generic_open(file, path, iflags, filetype.bits(), &mut root_inode_ref);
+
+        r
     }
 
-    pub fn ext4_dir_mk(&self, path: &str) {
+    pub fn ext4_dir_mk(&self, path: &str) -> Result<usize>{
         let mut file = Ext4File::new();
         let flags = "w";
 
@@ -167,8 +170,8 @@ impl Ext4 {
 
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
 
-        // log::info!("filetype {:x?}", filetype.bits());
-        self.ext4_generic_open(&mut file, path, iflags, filetype.bits(), &mut root_inode_ref);
+        let r = self.ext4_generic_open(&mut file, path, iflags, filetype.bits(), &mut root_inode_ref);
+        r
     }
 
     pub fn ext4_generic_open(
@@ -178,7 +181,7 @@ impl Ext4 {
         iflags: u32,
         ftype: u8,
         parent_inode: &mut Ext4InodeRef,
-    ) {
+    ) -> Result<usize>{
         let mut is_goal = false;
 
         let mp: &Ext4MountPoint = &self.mount_point;
@@ -229,12 +232,12 @@ impl Ext4 {
                 // ext4_dir_destroy_result(&mut root_inode_ref, &mut dir_search_result);
 
                 if r != ENOENT {
-                    break;
+                    // dir search failed with error other than ENOENT
+                    return_errno_with_message!(Errnum::ENOTSUP, "dir search failed");
                 }
 
                 if !((iflags & O_CREAT) != 0) {
-                    log::info!("error flags not O_CREAT");
-                    break;
+                    return_errno_with_message!(Errnum::ENOENT, "file not found");
                 }
 
                 let mut child_inode_ref = Ext4InodeRef::new(self.self_ref.clone());
@@ -248,7 +251,8 @@ impl Ext4 {
                 }
 
                 if r != EOK {
-                    break;
+                    return_errno_with_message!(Errnum::EALLOCFIAL, "alloc inode fail");
+                    // break;
                 }
 
                 ext4_fs_inode_blocks_init(&mut child_inode_ref);
@@ -260,35 +264,9 @@ impl Ext4 {
                     len as u32,
                 );
 
-                // log::info!("is_goal {:?} r {:?}", is_goal, r);
-
-                // let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
-                // let ext4_blk = Ext4Block {
-                //     logical_block_id: 0,
-                //     disk_block_id: 0,
-                //     block_data: &mut data,
-                //     dirty: true,
-                // };
-                // let mut de = Ext4DirEntry::default();
-                // let mut test = Ext4DirSearchResult::new(ext4_blk, de);
-
-                // let r = ext4_dir_find_entry(
-                //     &mut search_parent,
-                //     &search_path[..len as usize],
-                //     len as u32,
-                //     &mut test,
-                // );
-                // let name = get_name(
-                //     test.dentry.name,
-                //     test.dentry.name_len as usize,
-                // )
-                // .unwrap();
-                // log::info!("create after link search de name{:?} de inode {:x?} result {:?}", name, test.dentry.inode, r);
-
-
                 if r != EOK {
                     /*Fail. Free new inode.*/
-                    break;
+                    return_errno_with_message!(Errnum::ELINKFIAL, "link fail");
                 }
 
                 ext4_fs_put_inode_ref_csum(&mut search_parent);
@@ -307,7 +285,7 @@ impl Ext4 {
 
             if is_goal {
                 file.inode = dir_search_result.dentry.inode;
-                return;
+                return Ok(EOK);
             } else {
                 search_parent = Ext4InodeRef::get_inode_ref(
                     self.self_ref.clone(),
