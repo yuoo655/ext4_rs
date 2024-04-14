@@ -2,13 +2,9 @@
 
 extern crate alloc;
 
-use alloc::string;
+
 use alloc::vec;
-use bitflags::Flags;
-use core::marker::PhantomData;
-use core::mem::size_of;
 use core::str;
-use core::*;
 
 mod consts;
 mod cstr;
@@ -119,7 +115,7 @@ pub fn main() {
     let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
     if let Err(e) = r {
         log::info!("open file error {:?}", e);
-        crate::panic!("open file error")
+        panic!("open file error")
     }
     log::info!("ext4_file inode {:?}", ext4_file.inode);
     let data = ext4.ext4_file_read(&mut ext4_file);
@@ -132,7 +128,7 @@ pub fn main() {
     let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
     if let Err(e) = r {
         log::info!("open file error {:?}", e);
-        crate::panic!("open file error")
+        panic!("open file error")
     }
     log::info!("ext4_file inode {:?}", ext4_file.inode);
     let data = ext4.ext4_file_read(&mut ext4_file);
@@ -146,7 +142,7 @@ pub fn main() {
         let r = ext4.ext4_dir_mk(&path);
         if let Err(e) = r {
             log::info!("dir make error {:?}", e);
-            crate::panic!("dir make error")
+            panic!("dir make error")
         }
     }
 
@@ -161,7 +157,7 @@ pub fn main() {
         let r = ext4.ext4_open(&mut ext4_file, path, "w+", true);
         if let Err(e) = r {
             log::info!("open file error {:?}", e);
-            crate::panic!("open file error")
+            panic!("open file error")
         }
 
         let write_data: [u8; write_size] = [0x41 + i as u8; write_size];
@@ -172,7 +168,7 @@ pub fn main() {
         let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
         if let Err(e) = r {
             log::info!("open file error {:?}", e);
-            crate::panic!("open file error")
+            panic!("open file error")
         }
         
         let data = ext4.ext4_file_read(&mut ext4_file);

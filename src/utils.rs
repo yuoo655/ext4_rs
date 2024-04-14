@@ -152,15 +152,9 @@ pub fn ext4_path_skip<'a>(path:&'a str, skip: &str) -> &'a str{
     path
 }
 
-// pub fn ext4_path_skip_dot(path: &str) -> &str {
-//     let path_skip_dot = path.trim_start_matches(".");
-//     path_skip_dot
-// }
-
-// pub fn ext4_path_skip_slash(path: &str) -> &str {
-//     let path_skip_slash = path.trim_start_matches("/");
-//     path_skip_slash
-// }
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 pub fn ext4_path_check(path:&str, is_goal:&mut bool) -> usize{
     for (i, c) in path.chars().enumerate() {

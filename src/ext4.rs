@@ -215,10 +215,6 @@ impl Ext4 {
             search_path = ext4_path_skip(search_path, "/");
             len = ext4_path_check(search_path, &mut is_goal);
 
-            // log::info!(
-            //     "search_path {:?} len {:?} is_goal {:?}",
-            //     search_path, len, is_goal
-            // );
 
             let r = ext4_dir_find_entry(
                 &mut search_parent,
@@ -371,6 +367,16 @@ impl Ext4 {
         // let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
         root_inode_ref.write_back_inode();
+    }
+
+    pub fn ext4_file_remove(&self, path: &str) -> Result<usize> {
+        
+
+        return_errno_with_message!(Errnum::ENOTSUP, "not support");
+    }
+
+    pub fn ext4_dir_remove(&self, path: &str) -> Result<usize> {
+        return_errno_with_message!(Errnum::ENOTSUP, "not support");
     }
 }
 
@@ -1336,7 +1342,6 @@ pub fn ext4_dir_find_in_block(
     while offset < block.block_data.len() {
 
 
-
         let de = Ext4DirEntry::try_from(&block.block_data[offset..]).unwrap();
 
         offset = offset + de.entry_len as usize;
@@ -1345,7 +1350,7 @@ pub fn ext4_dir_find_in_block(
         }
 
         let s = get_name(de.name, de.name_len as usize);
-        // log::info!("ext4_dir_find_in_block {:?}", s);
+
         if let Ok(s) = s {
             if name_len == de.name_len as u32 {
                 if name.to_string() == s {

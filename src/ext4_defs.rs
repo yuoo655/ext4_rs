@@ -1534,7 +1534,7 @@ impl core::str::FromStr for Ext4OpenFlags {
             "r+" | "rb+" | "r+b" => Ok(Ext4OpenFlags::ReadWrite),
             "w+" | "wb+" | "w+b" => Ok(Ext4OpenFlags::ReadWriteCreateTrunc),
             "a+" | "ab+" | "a+b" => Ok(Ext4OpenFlags::ReadWriteCreateAppend),
-            _ => Err(format!("Unknown open mode: {}", s)),
+            _ => Err(crate::ext4_defs::alloc::format!("Unknown open mode: {}", s)),
         }
     }
 }

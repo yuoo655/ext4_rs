@@ -1,4 +1,5 @@
 #![feature(error_in_core)]
+#![no_std]
 
 pub mod consts;
 pub mod ext4_error;
