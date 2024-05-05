@@ -31,6 +31,7 @@ pub enum Errnum {
 
 /// error used in this crate
 #[derive(Debug, Clone, Copy)]
+#[allow(unused)]
 pub struct Ext4Error {
     errno: Errnum,
     msg: Option<&'static str>,

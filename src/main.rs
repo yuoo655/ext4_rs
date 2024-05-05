@@ -19,7 +19,7 @@ pub use cstr::*;
 pub use ext4::*;
 pub use ext4_defs::*;
 pub use ext4_error::*;
-pub use prelude::*;
+use prelude::*;
 pub use utils::*;
 
 use log::{Level, LevelFilter, Metadata, Record};
@@ -82,23 +82,23 @@ impl BlockDevice for Disk {
             .open("ex4.img")
             .unwrap();
         let mut buf = vec![0u8; BLOCK_SIZE as usize];
-        let r = file.seek(std::io::SeekFrom::Start(offset as u64));
-        let r = file.read_exact(&mut buf);
+        let _r = file.seek(std::io::SeekFrom::Start(offset as u64));
+        let _r = file.read_exact(&mut buf);
 
         buf
     }
 
     fn write_offset(&self, offset: usize, data: &[u8]) {
         use std::fs::OpenOptions;
-        use std::io::{Read, Seek, Write};
+        use std::io::{Seek, Write};
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .open("ex4.img")
             .unwrap();
 
-        let r = file.seek(std::io::SeekFrom::Start(offset as u64));
-        let r = file.write_all(&data);
+        let _r = file.seek(std::io::SeekFrom::Start(offset as u64));
+        let _r = file.write_all(&data);
     }
 }
 
@@ -121,6 +121,10 @@ pub fn main() {
     let mut read_buf = vec![0u8; 0x20000000];
     let mut read_cnt = 0;
     let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 0x20000000 , &mut read_cnt);
+    if let Err(e) = r {
+        log::info!("read file error {:?}", e);
+        panic!("read file error")
+    }
     log::info!("read data sample {:x?}", &read_buf[0..10]);
 
     // read link
@@ -136,6 +140,10 @@ pub fn main() {
     let mut read_buf = vec![0u8; 0x1000];
     let mut read_cnt = 0;
     let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 0x1000 , &mut read_cnt);
+    if let Err(e) = r {
+        log::info!("read file error {:?}", e);
+        panic!("read file error")
+    }
     log::info!("read data sample {:x?}", &read_buf[0..10]);
 
     // dir
@@ -154,7 +162,7 @@ pub fn main() {
     // file
     log::info!("----write file in dir----");
     for i in 0..10{
-        const write_size: usize = 4096 * 10;
+        const WRITE_SIZE: usize = 4096 * 10;
         let path = format!("dirtest{}/write_{}.txt", i, i);
         let path = path.as_str();
         let mut ext4_file = Ext4File::new();
@@ -164,8 +172,8 @@ pub fn main() {
             panic!("open file error")
         }
 
-        let write_data: [u8; write_size] = [0x41 + i as u8; write_size];
-        ext4.ext4_file_write(&mut ext4_file, &write_data, write_size);
+        let write_data: [u8; WRITE_SIZE] = [0x41 + i as u8; WRITE_SIZE];
+        ext4.ext4_file_write(&mut ext4_file, &write_data, WRITE_SIZE);
 
 
         // test
@@ -178,6 +186,10 @@ pub fn main() {
         let mut read_buf = vec![0u8; 1024];
         let mut read_cnt = 0;
         let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 10 , &mut read_cnt);
+        if let Err(e) = r {
+            log::info!("read file error {:?}", e);
+            panic!("read file error")
+        }
         log::info!("read data sample {:x?}", &read_buf[0..10]);
     }
     

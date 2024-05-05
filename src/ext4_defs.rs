@@ -3,6 +3,8 @@ use core::mem::size_of;
 
 use super::*;
 use crate::prelude::*;
+use crate::ext4::BlockDevice;
+use crate::ext4::BASE_OFFSET;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum SeekFrom {
@@ -409,6 +411,7 @@ impl Ext4Inode {
         v
     }
 
+    #[allow(unused)]
     pub fn set_inode_checksum_value(
         &mut self,
         super_block: &Ext4Superblock,
@@ -532,9 +535,9 @@ impl Ext4Inode {
 
         let bg = Ext4BlockGroup::load(block_device, super_block, group as usize).unwrap();
 
-        let mut inode_table_blk_num =
+        let inode_table_blk_num =
             ((bg.inode_table_first_block_hi as u64) << 32) | bg.inode_table_first_block_lo as u64;
-        let mut offset =
+        let offset =
             inode_table_blk_num as usize * BLOCK_SIZE + (index * inode_size as u32) as usize;
         offset
     }
@@ -554,6 +557,7 @@ impl Ext4Inode {
         Ok(())
     }
 
+    #[allow(unused)]
     pub fn get_inode_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32 {
         let inode_size = super_block.inode_size();
 
@@ -743,6 +747,7 @@ impl Ext4BlockGroup {
         block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
     }
 
+    #[allow(unused)]
     pub fn get_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
         let desc_size = super_block.desc_size();
 
@@ -1158,12 +1163,12 @@ pub struct Ext4InodeRef {
 
 impl Ext4InodeRef {
     pub fn new(fs: Weak<Ext4>) -> Self {
-        let mut inner = Inner {
+        let inner = Inner {
             inode: Ext4Inode::default(),
             weak_self: Weak::new(),
         };
 
-        let mut inode = Self {
+        let inode = Self {
             inode_num: 0,
             inner,
             fs,
@@ -1191,7 +1196,7 @@ impl Ext4InodeRef {
         let offset =
             inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize;
 
-        let mut data = fs.block_device.read_offset(offset);
+        let data = fs.block_device.read_offset(offset);
         let inode_data = &data[..core::mem::size_of::<Ext4Inode>()];
         let inode = Ext4Inode::try_from(inode_data).unwrap();
 
@@ -1354,6 +1359,7 @@ impl Ext4DirEntry{
         name_len
     }
 
+    #[allow(unused)]
     pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data:&[u8]) -> u32{
         
         let ino_index = self.inode;
@@ -1549,6 +1555,7 @@ impl core::str::FromStr for Ext4OpenFlags {
     }
 }
 
+#[allow(unused)]
 pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     let mut csum = 0;
     let inodes_per_group = s.inodes_per_group;
@@ -1558,6 +1565,7 @@ pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     csum
 }
 
+#[allow(unused)]
 pub fn ext4_balloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {
     let mut csum = 0;
     let blocks_per_group = s.blocks_per_group;
@@ -1581,7 +1589,7 @@ pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath, block: u32) -> bool {
 
     // 定义左右两个指针，分别指向第一个和最后一个extent
     let mut l = unsafe { ext4_first_extent_mut(eh).add(1) };
-    let mut r = unsafe { ext4_last_extent_mut(eh) };
+    let mut r =  ext4_last_extent_mut(eh) ;
 
     // 如果extent header中没有有效的entry，直接返回false
     unsafe {
@@ -1623,7 +1631,7 @@ pub fn ext4_ext_search(path: &mut Ext4ExtentPath, block: u32) -> bool {
 
     let mut extent = unsafe {eh.add(1) as *mut Ext4Extent};
 
-    for i in 0..entries_count{
+    for _i in 0..entries_count{
         let ext = unsafe { &*extent };
         // if block in this ext
         // log::info!("block {:x?} ext.first_block {:x?} last_block {:x?}", block, ext.first_block , (ext.first_block + ext.block_count as u32));
@@ -1648,7 +1656,7 @@ pub fn ext4_ext_binsearch_old(path: &mut Ext4ExtentPathOld, block: u32) -> bool 
 
     // 定义左右两个指针，分别指向第一个和最后一个extent
     let mut l = unsafe { ext4_first_extent(eh).add(1) };
-    let mut r = unsafe { ext4_last_extent(eh) };
+    let mut r = ext4_last_extent(eh);
 
     // 如果extent header中没有有效的entry，直接返回false
     if eh.entries_count == 0 {
@@ -1717,7 +1725,7 @@ pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: Ext4Lblk) -> boo
 
     // 定义左右两个指针，分别指向第一个和最后一个extent
     let mut l = unsafe { ext4_first_extent_index_mut(eh).add(1) };
-    let mut r = unsafe { ext4_last_extent_index_mut(eh) };
+    let mut r = ext4_last_extent_index_mut(eh);
 
     // 如果extent header中没有有效的entry，直接返回false
     unsafe {
@@ -1746,53 +1754,53 @@ pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: Ext4Lblk) -> boo
     true
 }
 
-pub fn ext4_ext_find_extent(
-    eh: *mut Ext4ExtentHeader,
-    block: Ext4Lblk,
-) -> *mut Ext4Extent {
-    // 初始化一些变量
-    let mut low: i32;
-    let mut high: i32;
-    let mut mid: i32;
-    let mut ex: *mut Ext4Extent;
+// pub fn ext4_ext_find_extent(
+//     eh: *mut Ext4ExtentHeader,
+//     block: Ext4Lblk,
+// ) -> *mut Ext4Extent {
+//     // 初始化一些变量
+//     let mut low: i32;
+//     let mut high: i32;
+//     let mut mid: i32;
+//     let mut ex: *mut Ext4Extent;
 
-    // 如果头部的extent数为0，返回空指针
-    if eh.is_null() || unsafe { (*eh).entries_count } == 0 {
-        return core::ptr::null_mut();
-    }
+//     // 如果头部的extent数为0，返回空指针
+//     if eh.is_null() || unsafe { (*eh).entries_count } == 0 {
+//         return core::ptr::null_mut();
+//     }
 
-    // 从头部获取第一个extent的指针
-    ex = ext4_first_extent_mut(eh);
+//     // 从头部获取第一个extent的指针
+//     ex = ext4_first_extent_mut(eh);
 
-    // 如果头部的深度不为0，返回空指针
-    if unsafe { (*eh).depth } != 0 {
-        return core::ptr::null_mut();
-    }
+//     // 如果头部的深度不为0，返回空指针
+//     if unsafe { (*eh).depth } != 0 {
+//         return core::ptr::null_mut();
+//     }
 
-    // 使用二分查找法在extent数组中查找逻辑块号
-    low = 0;
-    high = unsafe { (*eh).entries_count - 1 } as i32;
-    while low <= high {
-        // 计算中间位置
-        mid = (low + high) / 2;
+//     // 使用二分查找法在extent数组中查找逻辑块号
+//     low = 0;
+//     high = unsafe { (*eh).entries_count - 1 } as i32;
+//     while low <= high {
+//         // 计算中间位置
+//         mid = (low + high) / 2;
 
-        // 获取中间位置的extent的指针
-        ex = unsafe { ex.add(mid as usize) };
+//         // 获取中间位置的extent的指针
+//         ex = unsafe { ex.add(mid as usize) };
 
-        // 比较extent的逻辑块号和目标逻辑块号
-        if block >= unsafe { (*ex).first_block } {
-            // 如果目标逻辑块号大于等于extent的逻辑块号，说明目标在右半部分
-            low = mid + 1;
-        } else {
-            // 如果目标逻辑块号小于extent的逻辑块号，说明目标在左半部分
-            high = mid - 1;
-        }
-    }
+//         // 比较extent的逻辑块号和目标逻辑块号
+//         if block >= unsafe { (*ex).first_block } {
+//             // 如果目标逻辑块号大于等于extent的逻辑块号，说明目标在右半部分
+//             low = mid + 1;
+//         } else {
+//             // 如果目标逻辑块号小于extent的逻辑块号，说明目标在左半部分
+//             high = mid - 1;
+//         }
+//     }
 
-    // 如果没有找到目标，返回最后一个小于目标的extent的指针
-    if high < 0 {
-        return core::ptr::null_mut();
-    } else {
-        return unsafe { ex.add(high as usize) };
-    }
-}
+//     // 如果没有找到目标，返回最后一个小于目标的extent的指针
+//     if high < 0 {
+//         return core::ptr::null_mut();
+//     } else {
+//         return unsafe { ex.add(high as usize) };
+//     }
+// }

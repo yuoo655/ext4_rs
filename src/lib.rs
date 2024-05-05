@@ -11,7 +11,7 @@ pub mod utils;
 pub use consts::*;
 pub use ext4_error::*;
 pub use ext4::*;
-pub use prelude::*;
+// use prelude::*;
 pub use ext4_defs::*;
 pub use utils::*;
 
