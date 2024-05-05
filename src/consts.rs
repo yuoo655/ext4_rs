@@ -25,6 +25,8 @@ pub const EXT4_INODE_MODE_TYPE_MASK: u16 =  0xF000;
 
 pub const EXT_MAX_BLOCKS: ext4_lblk_t = core::u32::MAX;
 
+pub const EXT4_SUPERBLOCK_OS_HURD: u32 = 1;
+
 /// Maximum bytes in a path
 pub const PATH_MAX: usize = 4096;
 

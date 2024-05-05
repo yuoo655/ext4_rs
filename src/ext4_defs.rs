@@ -333,6 +333,16 @@ impl Ext4Inode {
         self.mode
     }
 
+    pub fn ext4_inode_type(&self, super_block: &Ext4Superblock) -> u32{
+        let mut v = self.mode;
+
+        if super_block.creator_os == EXT4_SUPERBLOCK_OS_HURD{
+            v |= ((self.osd2.l_i_file_acl_high as u32 ) << 16) as u16;
+        }
+
+        (v & EXT4_INODE_MODE_TYPE_MASK) as u32
+    }
+
     pub fn ext4_inode_set_flags(&mut self, f: u32) {
         self.flags |= f;
     }
@@ -358,7 +368,7 @@ impl Ext4Inode {
         self.size_hi = (size >> 32) as u32;
     }
 
-    pub fn ext4_inode_get_size(&mut self) -> u64{
+    pub fn ext4_inode_get_size(&self) -> u64{
         self.size as u64 | ((self.size_hi as u64) << 32)
     }
 

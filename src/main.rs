@@ -118,8 +118,10 @@ pub fn main() {
         panic!("open file error")
     }
     log::info!("ext4_file inode {:?}", ext4_file.inode);
-    let data = ext4.ext4_file_read(&mut ext4_file);
-    log::info!("read data sample {:x?}", &data[0..10]);
+    let mut read_buf = vec![0u8; 1024];
+    let mut read_cnt = 0;
+    let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 10 , &mut read_cnt);
+    log::info!("read data sample {:x?}", &read_buf[0..10]);
 
     // read link
     let path =
@@ -171,8 +173,10 @@ pub fn main() {
             panic!("open file error")
         }
         
-        let data = ext4.ext4_file_read(&mut ext4_file);
-        log::info!("read data sample {:x?}", &data[0..10]);
+        let mut read_buf = vec![0u8; 1024];
+        let mut read_cnt = 0;
+        let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 10 , &mut read_cnt);
+        log::info!("read data sample {:x?}", &read_buf[0..10]);
     }
     
 

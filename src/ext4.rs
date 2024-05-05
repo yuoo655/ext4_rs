@@ -326,6 +326,104 @@ impl Ext4 {
         file_data
     }
 
+    pub fn ext4_file_read_new(&self, ext4_file: &mut Ext4File, read_buf:&mut [u8], size:usize, read_cnt: &mut usize)-> Result<usize>{
+
+        if size == 0 {
+            return Ok(EOK);
+        }
+
+        let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), ext4_file.inode);
+
+        // sync file size
+        ext4_file.fsize = inode_ref.inner.inode.ext4_inode_get_size();
+
+        let is_softlink = inode_ref.inner.inode.ext4_inode_type(&self.super_block) == EXT4_INODE_MODE_SOFTLINK as u32;
+
+        if is_softlink{
+            log::debug!("ext4_read unsupported softlink");
+        }
+
+        let block_size = BLOCK_SIZE;
+
+        // 计算读取大小
+        let size_to_read = if size > (ext4_file.fsize as usize - ext4_file.fpos ) {
+            ext4_file.fsize as usize - ext4_file.fpos 
+        } else {
+            size
+        };
+
+        let mut iblock_idx = (ext4_file.fpos / block_size) as u32;
+        let iblock_last = ((ext4_file.fpos + size_to_read) / block_size) as u32;
+        let mut unalg = (ext4_file.fpos % block_size) as u32;
+
+
+        let mut offset = 0;
+        let mut total_bytes_read = 0;
+
+
+        if unalg > 0 {
+            let first_block_read_len = core::cmp::min(block_size - unalg as usize, size_to_read);
+            let mut fblock = 0;
+
+            ext4_fs_get_inode_dblk_idx(&mut inode_ref, &mut iblock_idx, &mut fblock, false);
+
+            // if r != EOK {
+            //     return Err(Ext4Error::new(r));
+            // }
+    
+            if fblock != 0 {
+                let block_offset = fblock * block_size as u64 + unalg as u64;
+                let block_data = self.block_device.read_offset(block_offset as usize);
+    
+                // Copy data from block to the user buffer
+                read_buf[offset..offset + first_block_read_len].copy_from_slice(&block_data[0..first_block_read_len]);
+            } else {
+                // Handle the unwritten block by zeroing out the respective part of the buffer
+                for x in &mut read_buf[offset..offset + first_block_read_len] {
+                    *x = 0;
+                }
+            }
+    
+            offset += first_block_read_len;
+            total_bytes_read += first_block_read_len;
+            ext4_file.fpos += first_block_read_len;
+            *read_cnt += first_block_read_len;
+            iblock_idx += 1;
+        }
+
+        // Continue with full block reads
+        while total_bytes_read < size_to_read {
+            let read_length = core::cmp::min(block_size, size_to_read - total_bytes_read);
+            let mut fblock = 0;
+
+            ext4_fs_get_inode_dblk_idx(&mut inode_ref, &mut iblock_idx, &mut fblock, false);
+
+            // if r != EOK {
+            //     return Err(Ext4Error::new(r));
+            // }
+
+            if fblock != 0 {
+                let block_data = self.block_device.read_offset((fblock * block_size as u64) as usize);
+                read_buf[offset..offset + read_length].copy_from_slice(&block_data[0..read_length]);
+            } else {
+                // Handle the unwritten block by zeroing out the respective part of the buffer
+                for x in &mut read_buf[offset..offset + read_length] {
+                    *x = 0;
+                }
+            }
+
+            offset += read_length;
+            total_bytes_read += read_length;
+            ext4_file.fpos += read_length;
+            *read_cnt += read_length;
+            iblock_idx += 1;
+        }
+
+        return Ok(EOK);
+
+    }
+
+
     pub fn ext4_file_write(&self, ext4_file: &mut Ext4File, data: &[u8], size: usize) {
         let super_block_data = self.block_device.read_offset(BASE_OFFSET);
         let super_block = Ext4Superblock::try_from(super_block_data).unwrap();
