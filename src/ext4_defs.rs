@@ -1711,7 +1711,7 @@ pub fn ext4_inodes_in_group_cnt(bgid: u32, s: &Ext4Superblock) -> u32 {
 
 
 // 定义ext4_ext_binsearch函数，接受一个指向ext4_extent_path的可变引用和一个逻辑块号，返回一个布尔值，表示是否找到了对应的extent
-pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: ext4_lblk_t) -> bool {
+pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: Ext4Lblk) -> bool {
     // 获取extent header的引用
     let eh = path.header;
 
@@ -1748,7 +1748,7 @@ pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath, block: ext4_lblk_t) -> 
 
 pub fn ext4_ext_find_extent(
     eh: *mut Ext4ExtentHeader,
-    block: ext4_lblk_t,
+    block: Ext4Lblk,
 ) -> *mut Ext4Extent {
     // 初始化一些变量
     let mut low: i32;

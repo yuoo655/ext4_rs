@@ -553,7 +553,7 @@ pub fn ext4_dir_add_entry(
     let total_blocks = inode_size as u32 / block_size;
     let mut success = false;
 
-    let mut fblock: ext4_fsblk_t = 0;
+    let mut fblock: Ext4Fsblk = 0;
 
     // log::info!("ext4_dir_add_entry parent inode {:x?} inode_size {:x?}", parent.inode_num, inode_size);
     while iblock < total_blocks {
@@ -763,16 +763,16 @@ pub fn ext4_dir_write_entry(
 
 pub fn ext4_fs_append_inode_dblk(
     inode_ref: &mut Ext4InodeRef,
-    iblock: &mut ext4_lblk_t,
-    fblock: &mut ext4_fsblk_t,
+    iblock: &mut Ext4Lblk,
+    fblock: &mut Ext4Fsblk,
 ) {
     let inode_size = inode_ref.inner.inode.ext4_inode_get_size();
     let block_size = BLOCK_SIZE as u64;
 
     *iblock = ((inode_size + block_size - 1) / block_size) as u32;
 
-    let mut current_block: ext4_fsblk_t;
-    let mut current_fsblk: ext4_fsblk_t = 0;
+    let mut current_block: Ext4Fsblk;
+    let mut current_fsblk: Ext4Fsblk = 0;
     ext4_extent_get_blocks(inode_ref, *iblock, 1, &mut current_fsblk, true, &mut 0);
 
     current_block = current_fsblk;
@@ -890,7 +890,7 @@ pub fn ext4_dir_find_entry(
 ) -> usize {
     // log::info!("ext4_dir_find_entry parent {:x?} {:?}",parent.inode_num,  name);
     let mut iblock = 0;
-    let mut fblock: ext4_fsblk_t = 0;
+    let mut fblock: Ext4Fsblk = 0;
 
     let inode_size: u32 = parent.inner.inode.size;
     let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
@@ -923,9 +923,9 @@ pub fn ext4_dir_find_entry(
 
 pub fn ext4_extent_get_blocks(
     inode_ref: &mut Ext4InodeRef,
-    iblock: ext4_lblk_t,
+    iblock: Ext4Lblk,
     max_blocks: u32,
-    result: &mut ext4_fsblk_t,
+    result: &mut Ext4Fsblk,
     create: bool,
     blocks_count: &mut u32,
 ) {
@@ -1285,7 +1285,7 @@ pub fn ext4_idx_pblock(idx: *mut Ext4ExtentIndex) -> u64 {
 
     // 如果支持64位物理块号，获取索引的高16位物理块号
     let pblock_hi = unsafe { (*idx).leaf_hi };
-    pblock |= ((pblock_hi as ext4_fsblk_t) << 32) as u64;
+    pblock |= ((pblock_hi as Ext4Fsblk) << 32) as u64;
     // }
 
     // 返回索引的物理块号
@@ -1294,13 +1294,13 @@ pub fn ext4_idx_pblock(idx: *mut Ext4ExtentIndex) -> u64 {
 
 fn ext4_find_extent(
     inode_ref: &mut Ext4InodeRef,
-    block: ext4_lblk_t,
+    block: Ext4Lblk,
     orig_path: &mut Option<Vec<Ext4ExtentPath>>,
     flags: u32,
 ) -> usize {
     let inode = &inode_ref.inner.inode;
     let mut eh: &Ext4ExtentHeader;
-    let mut buf_block: ext4_fsblk_t = 0;
+    let mut buf_block: Ext4Fsblk = 0;
     let mut path = orig_path.take(); // Take the path out of the Option, which may replace it with None
     let depth = unsafe { *ext4_inode_hdr(inode) }.depth;
 
@@ -1349,7 +1349,7 @@ fn ext4_find_extent(
     EOK
 }
 
-pub fn ext4_ext_find_extent(eh: *mut Ext4ExtentHeader, block: ext4_lblk_t) -> *mut Ext4Extent {
+pub fn ext4_ext_find_extent(eh: *mut Ext4ExtentHeader, block: Ext4Lblk) -> *mut Ext4Extent {
     // 初始化一些变量
     let mut low: i32;
     let mut high: i32;
@@ -1398,12 +1398,12 @@ pub fn ext4_ext_find_extent(eh: *mut Ext4ExtentHeader, block: ext4_lblk_t) -> *m
 }
 pub fn ext4_fs_get_inode_dblk_idx(
     inode_ref: &mut Ext4InodeRef,
-    iblock: &mut ext4_lblk_t,
-    fblock: &mut ext4_fsblk_t,
+    iblock: &mut Ext4Lblk,
+    fblock: &mut Ext4Fsblk,
     extent_create: bool,
 ) -> usize {
-    let mut current_block: ext4_fsblk_t;
-    let mut current_fsblk: ext4_fsblk_t = 0;
+    let mut current_block: Ext4Fsblk;
+    let mut current_fsblk: Ext4Fsblk = 0;
 
     let mut blocks_count = 0;
     ext4_extent_get_blocks(
@@ -1423,13 +1423,13 @@ pub fn ext4_fs_get_inode_dblk_idx(
 
 pub fn ext4_fs_get_inode_dblk_idx_internal(
     inode_ref: &mut Ext4InodeRef,
-    iblock: &mut ext4_lblk_t,
-    fblock: &mut ext4_fsblk_t,
+    iblock: &mut Ext4Lblk,
+    fblock: &mut Ext4Fsblk,
     extent_create: bool,
     support_unwritten: bool,
 ) {
-    let mut current_block: ext4_fsblk_t;
-    let mut current_fsblk: ext4_fsblk_t = 0;
+    let mut current_block: Ext4Fsblk;
+    let mut current_fsblk: Ext4Fsblk = 0;
 
     let mut blocks_count = 0;
     ext4_extent_get_blocks(
@@ -1561,8 +1561,8 @@ pub fn ext4_ialloc_alloc_inode(fs: Arc<Ext4>, index: &mut u32, is_dir: bool) {
 
 pub fn ext4_balloc_alloc_block(
     inode_ref: &mut Ext4InodeRef,
-    goal: ext4_fsblk_t,
-    fblock: &mut ext4_fsblk_t,
+    goal: Ext4Fsblk,
+    fblock: &mut Ext4Fsblk,
 ) {
     // let mut alloc: ext4_fsblk_t = 0;
     // let mut bmp_blk_adr: ext4_fsblk_t;

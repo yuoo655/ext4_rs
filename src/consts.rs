@@ -1,8 +1,8 @@
 use bitflags::bitflags;
 
 pub const EOK: usize = 0;
-pub type ext4_lblk_t = u32;
-pub type ext4_fsblk_t = u64;
+pub type Ext4Lblk = u32;
+pub type Ext4Fsblk = u64;
 
 pub const EXT4_INODE_FLAG_EXTENTS: usize =  0x00080000; /* Inode uses extents */
 pub const EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 32;
@@ -23,7 +23,7 @@ pub const EXT4_INODE_MODE_SOFTLINK: usize =  0xA000;
 pub const EXT4_INODE_MODE_SOCKET: usize =  0xC000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 =  0xF000;
 
-pub const EXT_MAX_BLOCKS: ext4_lblk_t = core::u32::MAX;
+pub const EXT_MAX_BLOCKS: Ext4Lblk = core::u32::MAX;
 
 pub const EXT4_SUPERBLOCK_OS_HURD: u32 = 1;
 
@@ -39,26 +39,26 @@ pub const SYMLINKS_MAX: usize = 40;
 
 #[derive(Debug, PartialEq)]
 pub enum LibcOpenFlags {
-    O_ACCMODE,
-    O_RDONLY,
-    O_WRONLY,
-    O_RDWR,
-    O_CREAT,
-    O_EXCL,
-    O_NOCTTY,
-    O_TRUNC,
-    O_APPEND,
-    O_NONBLOCK,
-    O_SYNC,
-    O_ASYNC,
-    O_LARGEFILE,
-    O_DIRECTORY,
-    O_NOFOLLOW,
-    O_CLOEXEC,
-    O_DIRECT,
-    O_NOATIME,
-    O_PATH,
-    O_DSYNC,
+    OACCMODE,
+    ORDONLY,
+    OWRONLY,
+    ORDWR,
+    OCREAT,
+    OEXCL,
+    ONOCTTY,
+    OTRUNC,
+    OAPPEND,
+    ONONBLOCK,
+    OSYNC,
+    OASYNC,
+    OLARGEFILE,
+    ODIRECTORY,
+    ONOFOLLOW,
+    OCLOEXEC,
+    ODIRECT,
+    ONOATIME,
+    OPATH,
+    ODSYNC,
 }
 
 pub const O_ACCMODE: u32 = 0o0003;
