@@ -2,7 +2,10 @@
 name = "ext4_rs"
 version = "0.1.0"
 edition = "2021"
-
+description = "Cross-platform rust ext4."
+authors = ["yuoo655 <lenuulan@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/yuoo655/ext4_rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
