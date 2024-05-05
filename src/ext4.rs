@@ -150,6 +150,19 @@ impl Ext4 {
         r
     }
 
+    pub fn ext4_file_close(&self, file: &mut Ext4File) -> Result<usize>{
+
+        assert!(!file.mp.is_null());
+
+        file.mp = core::ptr::null_mut();
+        file.flags = 0;
+        file.inode = 0;
+        file.fpos = 0;
+        file.fsize = 0;
+
+        return Ok(EOK)
+    }
+
     pub fn ext4_dir_mk(&self, path: &str) -> Result<usize>{
         let mut file = Ext4File::new();
         let flags = "w";
