@@ -1326,7 +1326,7 @@ fn ext4_find_extent(
     path[ppos].extent = core::ptr::null_mut();
     path[ppos].index = core::ptr::null_mut();
 
-    ext4_ext_binsearch(&mut path[ppos], block);
+    ext4_ext_search(&mut path[ppos], block);
     if !path[ppos].extent.is_null() {
         path[ppos].p_block = ext4_ext_pblock(&unsafe { *(path[ppos].extent) }) as u64;
     }

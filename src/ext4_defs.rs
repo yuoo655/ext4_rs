@@ -1610,6 +1610,34 @@ pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath, block: u32) -> bool {
     true
 }
 
+pub fn ext4_ext_search(path: &mut Ext4ExtentPath, block: u32) -> bool {
+    let eh = path.header;
+
+    unsafe {
+        if (*eh).entries_count == 0 {
+            return false;
+        }
+    }
+
+    let entries_count = unsafe{(*eh).entries_count};
+
+    let mut extent = unsafe {eh.add(1) as *mut Ext4Extent};
+
+    for i in 0..entries_count{
+        let ext = unsafe { &*extent };
+        // if block in this ext
+        // log::info!("block {:x?} ext.first_block {:x?} last_block {:x?}", block, ext.first_block , (ext.first_block + ext.block_count as u32));
+        if block >= ext.first_block && block <= (ext.first_block + ext.block_count as u32) {
+            path.extent = extent;
+            return true;
+        }
+        extent = unsafe{extent.add(1)};
+    }
+
+    return false;
+
+}
+
 pub fn ext4_ext_binsearch_old(path: &mut Ext4ExtentPathOld, block: u32) -> bool {
     // 获取extent header的引用
     let eh = unsafe { &*path.header };
