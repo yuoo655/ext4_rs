@@ -1,15 +1,12 @@
 extern crate alloc;
 extern crate log;
 
-// use alloc::string;
 use alloc::vec;
-// use bitflags::Flags;
-// use core::marker::PhantomData;
 use core::mem::size_of;
 use core::str;
 use core::*;
 
-use super::ext4_defs::*;
+use crate::ext4_structs::*;
 use crate::consts::*;
 use crate::prelude::*;
 use crate::return_errno_with_message;

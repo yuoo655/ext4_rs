@@ -2,22 +2,18 @@
 
 extern crate alloc;
 
-
 use alloc::vec;
-use core::str;
 
 mod consts;
-mod cstr;
 mod ext4;
-mod ext4_defs;
+mod ext4_structs;
 mod ext4_error;
 mod prelude;
 mod utils;
 
 pub use consts::*;
-pub use cstr::*;
 pub use ext4::*;
-pub use ext4_defs::*;
+pub use ext4_structs::*;
 pub use ext4_error::*;
 use prelude::*;
 pub use utils::*;
