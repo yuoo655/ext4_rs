@@ -304,8 +304,10 @@ impl Ext4 {
             }
         }
     }
+
+    // read all extent
     #[allow(unused)]
-    pub fn ext4_file_read(&self, ext4_file: &mut Ext4File) -> Vec<u8> {
+    pub fn ext4_file_read_old(&self, ext4_file: &mut Ext4File) -> Vec<u8> {
         // 创建一个空的向量，用于存储文件的内容
         let mut file_data: Vec<u8> = Vec::new();
 
@@ -340,7 +342,7 @@ impl Ext4 {
     }
 
     #[allow(unused)]
-    pub fn ext4_file_read_new(&self, ext4_file: &mut Ext4File, read_buf:&mut [u8], size:usize, read_cnt: &mut usize)-> Result<usize>{
+    pub fn ext4_file_read(&self, ext4_file: &mut Ext4File, read_buf:&mut [u8], size:usize, read_cnt: &mut usize)-> Result<usize>{
 
         if size == 0 {
             return Ok(EOK);

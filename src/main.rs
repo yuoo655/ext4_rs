@@ -116,7 +116,7 @@ pub fn main() {
     log::info!("ext4_file inode {:?}", ext4_file.inode);
     let mut read_buf = vec![0u8; 0x20000000];
     let mut read_cnt = 0;
-    let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 0x20000000 , &mut read_cnt);
+    let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, 0x20000000 , &mut read_cnt);
     if let Err(e) = r {
         log::info!("read file error {:?}", e);
         panic!("read file error")
@@ -135,7 +135,7 @@ pub fn main() {
     log::info!("ext4_file inode {:?}", ext4_file.inode);
     let mut read_buf = vec![0u8; 0x1000];
     let mut read_cnt = 0;
-    let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 0x1000 , &mut read_cnt);
+    let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, 0x1000 , &mut read_cnt);
     if let Err(e) = r {
         log::info!("read file error {:?}", e);
         panic!("read file error")
@@ -181,7 +181,7 @@ pub fn main() {
         
         let mut read_buf = vec![0u8; 1024];
         let mut read_cnt = 0;
-        let r = ext4.ext4_file_read_new(&mut ext4_file, &mut read_buf, 10 , &mut read_cnt);
+        let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, 10 , &mut read_cnt);
         if let Err(e) = r {
             log::info!("read file error {:?}", e);
             panic!("read file error")
