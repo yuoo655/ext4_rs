@@ -1,6 +1,6 @@
 [package]
 name = "ext4_rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Cross-platform rust ext4."
 authors = ["yuoo655 <lenuulan@gmail.com>"]
