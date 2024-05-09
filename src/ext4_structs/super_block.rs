@@ -1,27 +1,27 @@
-use crate::consts::*;
-use crate::BASE_OFFSET;
-use crate::prelude::*;
-use core::mem::size_of;
-use crate::BlockDevice;
 use super::*;
+use crate::consts::*;
+use crate::prelude::*;
 use crate::utils::*;
+use crate::BlockDevice;
+use core::mem::size_of;
 
+use crate::BASE_OFFSET;
 
 // 结构体表示超级块
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ext4Superblock {
-    pub inodes_count: u32,             // 节点数
+    pub inodes_count: u32,         // 节点数
     blocks_count_lo: u32,          // 块数
     reserved_blocks_count_lo: u32, // 保留块数
     free_blocks_count_lo: u32,     // 空闲块数
     free_inodes_count: u32,        // 空闲节点数
-    pub first_data_block: u32,         // 第一个数据块
+    pub first_data_block: u32,     // 第一个数据块
     log_block_size: u32,           // 块大小
     log_cluster_size: u32,         // 废弃的片段大小
     blocks_per_group: u32,         // 每组块数
     frags_per_group: u32,          // 废弃的每组片段数
-    pub inodes_per_group: u32,         // 每组节点数
+    pub inodes_per_group: u32,     // 每组节点数
     mount_time: u32,               // 挂载时间
     write_time: u32,               // 写入时间
     mount_count: u16,              // 挂载次数
@@ -32,19 +32,19 @@ pub struct Ext4Superblock {
     minor_rev_level: u16,          // 次版本号
     last_check_time: u32,          // 最后检查时间
     check_interval: u32,           // 检查间隔
-    pub creator_os: u32,               // 创建者操作系统
+    pub creator_os: u32,           // 创建者操作系统
     rev_level: u32,                // 版本号
     def_resuid: u16,               // 保留块的默认uid
     def_resgid: u16,               // 保留块的默认gid
 
     // 仅适用于EXT4_DYNAMIC_REV超级块的字段
     first_inode: u32,            // 第一个非保留节点
-    pub inode_size: u16,             // 节点结构的大小
+    pub inode_size: u16,         // 节点结构的大小
     block_group_index: u16,      // 此超级块的块组索引
     features_compatible: u32,    // 兼容特性集
     features_incompatible: u32,  // 不兼容特性集
-    pub features_read_only: u32,     // 只读兼容特性集
-    pub uuid: [u8; 16],              // 卷的128位uuid
+    pub features_read_only: u32, // 只读兼容特性集
+    pub uuid: [u8; 16],          // 卷的128位uuid
     volume_name: [u8; 16],       // 卷名
     last_mounted: [u8; 64],      // 最后挂载的目录
     algorithm_usage_bitmap: u32, // 用于压缩的算法
@@ -62,7 +62,7 @@ pub struct Ext4Superblock {
     hash_seed: [u32; 4],       // HTREE散列种子
     default_hash_version: u8,  // 默认的散列版本
     journal_backup_type: u8,
-    pub desc_size: u16,            // 组描述符的大小
+    pub desc_size: u16,        // 组描述符的大小
     default_mount_opts: u32,   // 默认的挂载选项
     first_meta_bg: u32,        // 第一个元数据块组
     mkfs_time: u32,            // 文件系统创建的时间
@@ -241,7 +241,6 @@ impl Ext4Superblock {
     //     block_device.write_offset(BASE_OFFSET, data);
     // }
 }
-
 
 #[allow(unused)]
 pub fn ext4_ialloc_bitmap_csum(bitmap: &[u8], s: &Ext4Superblock) -> u32 {

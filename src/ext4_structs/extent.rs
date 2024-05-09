@@ -1,7 +1,6 @@
-use super::*;
+// use super::*;
 use crate::consts::*;
 use crate::prelude::*;
-use core::f32::consts;
 use core::mem::size_of;
 
 /// Structure representing the header of an Ext4 extent.
@@ -115,6 +114,21 @@ impl<T> TryFrom<&[T]> for Ext4Extent {
     }
 }
 
+impl Ext4ExtentIndex {
+    /// Returns the physical block number represented by this index.
+    pub fn pblock(&self) -> u64 {
+        // Get the lower 32 bits of the block number
+        let pblock_lo = self.leaf_lo as u64;
+
+        // Get the upper 16 bits and shift them into the high part of the result
+        let pblock_hi = self.leaf_hi as u64;
+        let pblock = pblock_lo | (pblock_hi << 32);
+
+        pblock
+    }
+}
+
+
 impl Ext4ExtentHeader {
     pub fn new(magic: u16, entries: u16, max_entries: u16, depth: u16, generation: u32) -> Self {
         Self {
@@ -180,6 +194,11 @@ impl Ext4Extent {
             } else {
                 self.get_actual_len() + prev.get_actual_len() <= EXT_INIT_MAX_LEN
             }
+    }
+
+    /// Marks the extent as unwritten.
+    pub unsafe fn mark_unwritten(&mut self) {
+        self.block_count |= EXT_INIT_MAX_LEN;
     }
 }
 
@@ -291,7 +310,7 @@ impl Ext4ExtentPath {
         let mut left = header_ref.first_extent_mut().add(1);
         let mut right = header_ref.last_extent_mut();
         while left <= right {
-            let mid = left.offset((right as isize - left as isize) / 2);
+            let mid = left.add((right as usize - left as usize) / 2);
             if (*mid).first_block > block {
                 right = mid.sub(1);
             } else if (*mid).first_block + (*mid).block_count as u32 > block {
@@ -319,7 +338,7 @@ impl Ext4ExtentPath {
             let mut left = header_ref.first_extent_index_mut().add(1);
             let mut right = header_ref.last_extent_index_mut();
             while left <= right {
-                let mid = left.offset((right as isize - left as isize) / 2);
+                let mid =left.add((right as usize - left as usize) / 2) ;
                 if (*mid).first_block > block {
                     right = mid.sub(1);
                 } else if (*mid).first_block + size_of::<Ext4ExtentIndex>() as u32 > block {
@@ -333,3 +352,4 @@ impl Ext4ExtentPath {
         }
     }
 }
+

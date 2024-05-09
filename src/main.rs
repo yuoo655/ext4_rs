@@ -5,18 +5,21 @@ extern crate alloc;
 use alloc::vec;
 
 mod consts;
-mod ext4;
 mod ext4_structs;
 mod ext4_error;
 mod prelude;
 mod utils;
+mod ext4_interface;
+mod ext4_impl;
 
 pub use consts::*;
-pub use ext4::*;
+pub use ext4_interface::*;
 pub use ext4_structs::*;
 pub use ext4_error::*;
 use prelude::*;
 pub use utils::*;
+
+
 
 use log::{Level, LevelFilter, Metadata, Record};
 

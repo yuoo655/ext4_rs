@@ -1,15 +1,13 @@
-use crate::consts::*;
-// use crate::BASE_OFFSET;
 use super::*;
+use crate::consts::*;
 use crate::prelude::*;
-use core::mem::size_of;
-// use super::*;
-// use crate::consts::*;
-// use crate::prelude::*;
+#[allow(unused)]
+use crate::return_errno_with_message;
 use crate::utils::*;
 use crate::BlockDevice;
 use crate::Ext4;
 use crate::BLOCK_SIZE;
+use core::mem::size_of;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +103,7 @@ impl Ext4Inode {
         self.size_hi = (size >> 32) as u32;
     }
 
-    pub fn ext4_inode_get_size(&self) -> u64 {
+    pub fn inode_get_size(&self) -> u64 {
         self.size as u64 | ((self.size_hi as u64) << 32)
     }
 
@@ -231,6 +229,14 @@ impl Ext4Inode {
         Ok(())
     }
 
+    fn copy_to_slice(&self, slice: &mut [u8]) {
+        unsafe {
+            let inode_ptr = self as *const Ext4Inode as *const u8;
+            let array_ptr = slice.as_ptr() as *mut u8;
+            core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
+        }
+    }
+
     #[allow(unused)]
     pub fn get_inode_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32 {
         let inode_size = super_block.inode_size();
@@ -254,7 +260,7 @@ impl Ext4Inode {
         checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
 
         let mut raw_data = [0u8; 0x100];
-        copy_inode_to_array(&self, &mut raw_data);
+        self.copy_to_slice(&mut raw_data);
 
         // inode checksum
         checksum = ext4_crc32c(checksum, &raw_data, inode_size as u32);
@@ -286,14 +292,6 @@ impl Ext4Inode {
     ) -> Result<()> {
         self.set_inode_checksum(super_block, inode_id);
         self.sync_inode_to_disk(block_device, super_block, inode_id)
-    }
-}
-
-pub fn copy_inode_to_array(inode: &Ext4Inode, array: &mut [u8]) {
-    unsafe {
-        let inode_ptr = inode as *const Ext4Inode as *const u8;
-        let array_ptr = array as *mut [u8] as *mut u8;
-        core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
     }
 }
 
@@ -384,6 +382,391 @@ impl Ext4InodeRef {
     pub fn ext4_fs_put_inode_ref(&mut self) {
         self.write_back_inode_without_csum();
     }
+}
+
+pub struct Inner {
+    pub inode: Ext4Inode,
+    pub weak_self: Weak<Ext4InodeRef>,
+}
+
+impl Inner {
+    pub fn inode(&self) -> Arc<Ext4InodeRef> {
+        self.weak_self.upgrade().unwrap()
+    }
+
+    pub fn write_back_inode(&mut self) {
+        let weak_inode_ref = self.weak_self.clone().upgrade().unwrap();
+        let fs = weak_inode_ref.fs();
+        let block_device = fs.block_device.clone();
+        let super_block = fs.super_block.clone();
+        let inode_id = weak_inode_ref.inode_num;
+        self.inode
+            .sync_inode_to_disk_with_csum(block_device, &super_block, inode_id)
+            .unwrap()
+    }
+}
+
+/// Ext4 inode-related operations.
+impl Ext4Inode {
+    /// Get a pointer to the extent header from an inode.
+    pub fn extent_header(&self) -> *const Ext4ExtentHeader {
+        &self.block as *const [u32; 15] as *const Ext4ExtentHeader
+    }
+
+    /// Get a mutable pointer to the extent header from an inode.
+    pub fn extent_header_mut(&mut self) -> *mut Ext4ExtentHeader {
+        &mut self.block as *mut [u32; 15] as *mut Ext4ExtentHeader
+    }
+
+    /// Get the depth of the extent tree from an inode.
+    pub unsafe fn extent_depth(&self) -> u16 {
+        (*self.extent_header()).depth
+    }
+}
+
+impl Ext4InodeRef {
+    #[allow(unused)]
+    /// Searches for an extent and initializes path data structures accordingly.
+    pub fn find_extent(
+        &mut self,
+        block_id: Ext4Lblk,
+        orig_path: &mut Option<Vec<Ext4ExtentPath>>,
+        flags: u32,
+    ) -> usize {
+        let inode = &self.inner.inode;
+        let mut eh: &Ext4ExtentHeader;
+        let mut buf_block: Ext4Fsblk = 0;
+        let mut path = orig_path.take(); // Take the path out of the Option, which may replace it with None
+        let depth = unsafe { self.inner.inode.extent_depth() };
+
+        let mut ppos = 0;
+        let mut i: u16;
+
+        let eh = &inode.block as *const [u32; 15] as *mut Ext4ExtentHeader;
+
+        if let Some(ref mut p) = path {
+            if depth > p[0].maxdepth {
+                p.clear();
+            }
+        }
+        if path.is_none() {
+            let path_depth = depth + 1;
+            path = Some(vec![Ext4ExtentPath::default(); path_depth as usize + 1]);
+            path.as_mut().unwrap()[0].maxdepth = path_depth;
+        }
+
+        let path = path.as_mut().unwrap();
+        path[0].header = eh;
+
+        i = depth;
+        while i > 0 {
+            path[ppos].binsearch_extentidx(block_id);
+            // ext4_ext_binsearch_idx(&mut path[ppos], block);
+            path[ppos].p_block = unsafe { *path[ppos].index }.pblock();
+            path[ppos].depth = i;
+            path[ppos].extent = core::ptr::null_mut();
+            buf_block = path[ppos].p_block;
+
+            i -= 1;
+            ppos += 1;
+        }
+
+        path[ppos].depth = i;
+        path[ppos].extent = core::ptr::null_mut();
+        path[ppos].index = core::ptr::null_mut();
+
+        path[ppos].search_extent(block_id);
+        if !path[ppos].extent.is_null() {
+            path[ppos].p_block = unsafe { (*path[ppos].extent).pblock() } as u64;
+        }
+
+        *orig_path = Some(path.clone());
+
+        EOK
+    }
+
+    #[allow(unused)]
+    /// Gets blocks from an inode and manages extent creation if necessary.
+    pub fn get_blocks(
+        &mut self,
+        iblock: Ext4Lblk,
+        max_blocks: u32,
+        result: &mut Ext4Fsblk,
+        create: bool,
+        blocks_count: &mut u32,
+    ) {
+        *result = 0;
+        *blocks_count = 0;
+
+        let mut path: Option<Vec<Ext4ExtentPath>> = None;
+        // let err = crate::ext4_find_extent(self, iblock, &mut path, 0);
+        let err = self.find_extent(iblock, &mut path, 0);
+
+        // Ensure find_extent was successful
+        if err != EOK {
+            return;
+        }
+        // Unwrap the path safely after checking it is Some
+        let path = path
+            .as_mut()
+            .expect("Path should not be None after successful find_extent");
+
+        let depth = unsafe { self.inner.inode.extent_depth() } as usize;
+        // Safely access the desired depth element if it exists
+        if let Some(extent_path) = path.get(depth) {
+            if let Some(ex) = unsafe { extent_path.extent.as_ref() } {
+                // Safely obtain a reference to extent
+                let ee_block = ex.first_block;
+                let ee_start = ex.pblock();
+                let ee_len = ex.get_actual_len();
+
+                if iblock >= ee_block && iblock < ee_block + ee_len as u32 {
+                    let allocated = ee_len - (iblock - ee_block) as u16;
+                    *blocks_count = allocated as u32;
+
+                    if !create || ex.is_unwritten() {
+                        *result = (iblock - ee_block + ee_start) as u64;
+                        return; // Early return if no new extent needed
+                    }
+                }
+            }
+        }
+        if create {
+            let mut allocated: u32 = 0;
+            let next = EXT_MAX_BLOCKS;
+
+            allocated = next - iblock;
+            if allocated > max_blocks {
+                allocated = max_blocks;
+            }
+
+            let mut newex: Ext4Extent = Ext4Extent::default();
+
+            let goal = 0;
+
+            let mut alloc_block = 0;
+            alloc_block = self.balloc_alloc_block(goal as u64);
+
+            *result = alloc_block;
+
+            // 创建并插入新的extent
+            newex.first_block = iblock;
+            newex.start_lo = alloc_block as u32 & 0xffffffff;
+            newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
+            newex.block_count = allocated as u16;
+
+            // crate::ext4_ext_insert_extent(self,  &mut path[0], &newex, 0);
+
+            self.insert_extent(&mut path[0], &newex, 0);
+            // self.allocate_and_insert_new_extent(iblock, max_blocks, result, blocks_count);
+        }
+    }
+    #[allow(unused)]
+    pub fn balloc_alloc_block(&mut self, goal: Ext4Fsblk) -> u64 {
+        // let mut fblock = 0;
+
+        let fs = self.fs();
+
+        let block_device = fs.block_device.clone();
+
+        let super_block_data = block_device.read_offset(crate::BASE_OFFSET);
+        let mut super_block = Ext4Superblock::try_from(super_block_data).unwrap();
+
+        // let inodes_per_group = super_block.inodes_per_group();
+        let blocks_per_group = super_block.blocks_per_group();
+
+        let bgid = goal / blocks_per_group as u64;
+        let idx_in_bg = goal % blocks_per_group as u64;
+
+        let mut bg =
+            Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
+
+        let block_bitmap_block = bg.get_block_bitmap_block(&super_block);
+        let mut raw_data = block_device.read_offset(block_bitmap_block as usize * BLOCK_SIZE);
+        let mut data: &mut Vec<u8> = &mut raw_data;
+        let mut rel_blk_idx = 0 as u32;
+
+        ext4_bmap_bit_find_clr(data, idx_in_bg as u32, 0x8000, &mut rel_blk_idx);
+        // fblock = rel_blk_idx as u64;
+        ext4_bmap_bit_set(&mut data, rel_blk_idx);
+
+        bg.set_block_group_balloc_bitmap_csum(&super_block, &data);
+        block_device.write_offset(block_bitmap_block as usize * BLOCK_SIZE, &data);
+
+        /* Update superblock free blocks count */
+        let super_blk_free_blocks = super_block.free_blocks_count();
+        // super_blk_free_blocks -= 1;
+        super_block.set_free_blocks_count(super_blk_free_blocks);
+        super_block.sync_to_disk(block_device.clone());
+
+        /* Update inode blocks (different block size!) count */
+        let mut inode_blocks = self.inner.inode.ext4_inode_get_blocks_count();
+        inode_blocks += 8;
+        self.inner
+            .inode
+            .ext4_inode_set_blocks_count(inode_blocks as u32);
+        self.write_back_inode();
+
+        /* Update block group free blocks count */
+        let mut fb_cnt = bg.get_free_blocks_count();
+        fb_cnt -= 1;
+        bg.set_free_blocks_count(fb_cnt);
+        bg.sync_to_disk_with_csum(block_device, bgid as usize, &super_block);
+
+        rel_blk_idx as u64
+    }
+
+    /// Inserts a new extent into the inode's data structure.
+    pub fn insert_extent(&mut self, path: &mut Ext4ExtentPath, newext: &Ext4Extent, flags: i32) {
+        let depth = unsafe { self.inner.inode.extent_depth() };
+        let mut need_split = false;
+
+        self.insert_leaf(path, depth, newext, flags, &mut need_split);
+
+        self.write_back_inode_without_csum();
+    }
+
+    #[allow(unused)]
+    /// Handles the leaf insertion logic for extents, considering append and prepend scenarios.
+    fn insert_leaf(
+        &mut self,
+        path: &mut Ext4ExtentPath,
+        _depth: u16,
+        newext: &Ext4Extent,
+        _flags: i32,
+        need_split: &mut bool,
+    ) -> usize {
+        // Ensure we are working with a valid extent header and existing extent
+        if let Some(eh) = unsafe { path.header.as_mut() } {
+            let ex = path.extent;
+
+            // Manage appending new extents or adjusting existing ones
+            if let Some(current_ext) = unsafe { ex.as_mut() } {
+                // Calculate disk block for the new extent
+                let diskblock = newext.pblock();
+
+                // Append new extent to existing one if possible
+                if current_ext.can_append(newext) {
+                    if current_ext.is_unwritten() {
+                        unsafe {
+                            Ext4Extent::mark_unwritten(current_ext);
+                        }
+                    }
+
+                    // Update the block count to include the new extent
+                    current_ext.block_count += newext.get_actual_len();
+                    path.p_block = diskblock as u64;
+                    return EOK; // Successful append
+                }
+
+                // Prepend new extent to existing one if possible
+                if current_ext.can_prepend(newext) {
+                    current_ext.first_block = newext.first_block;
+                    current_ext.block_count += newext.get_actual_len();
+                    path.p_block = diskblock as u64;
+
+                    if current_ext.is_unwritten() {
+                        unsafe {
+                            Ext4Extent::mark_unwritten(current_ext);
+                        }
+                    }
+                    return EOK; // Successful prepend
+                }
+            }
+
+            // If no existing extent to append or prepend, we need to insert a new extent
+            unsafe {
+                if eh.entries_count == eh.max_entries_count {
+                    *need_split = true;
+                    return EIO; // Indicate error due to max entries reached
+                }
+
+                // Insert the new extent if there is space
+                let first_extent = Ext4ExtentHeader::first_extent_mut(eh);
+                if ex.is_null() {
+                    path.extent = first_extent;
+                    *first_extent = *newext;
+                } else {
+                    // Handling inserting after the current extent
+                    let next_extent = ex.add(1);
+                    path.extent = next_extent;
+                    *next_extent = *newext;
+                }
+
+                eh.entries_count += 1;
+            }
+        }
+
+        EOK // Indicate successful operation
+    }
+
+    #[allow(unused)]
+    pub fn get_inode_dblk_idx(
+        &mut self,
+        iblock: &mut Ext4Lblk,
+        fblock: &mut Ext4Fsblk,
+        extent_create: bool,
+    ) -> usize {
+        let current_block: Ext4Fsblk;
+        let mut current_fsblk: Ext4Fsblk = 0;
+
+        let mut blocks_count = 0;
+        // crate::ext4_extent_get_blocks(self,*iblock, 1, &mut current_fsblk, false, &mut blocks_count);
+        self.get_blocks(*iblock, 1, &mut current_fsblk, false, &mut blocks_count);
+
+        current_block = current_fsblk;
+        *fblock = current_block;
+
+        EOK
+    }
+
+    #[allow(unused)]
+    pub fn ext4_fs_get_inode_dblk_idx_internal(
+        &mut self,
+        iblock: &mut Ext4Lblk,
+        fblock: &mut Ext4Fsblk,
+        extent_create: bool,
+        support_unwritten: bool,
+    ) {
+        let mut current_block: Ext4Fsblk;
+        let mut current_fsblk: Ext4Fsblk = 0;
+
+        let mut blocks_count = 0;
+        // crate::ext4_extent_get_blocks(self,*iblock, 1, &mut current_fsblk, false, &mut blocks_count);
+        self.get_blocks(
+            *iblock,
+            1,
+            &mut current_fsblk,
+            extent_create,
+            &mut blocks_count,
+        );
+    }
+
+    pub fn append_inode_dblk(&mut self, iblock: &mut Ext4Lblk, fblock: &mut Ext4Fsblk) {
+        let inode_size = self.inner.inode.inode_get_size();
+        let block_size = BLOCK_SIZE as u64;
+
+        *iblock = ((inode_size + block_size - 1) / block_size) as u32;
+
+        let current_block: Ext4Fsblk;
+        let mut current_fsblk: Ext4Fsblk = 0;
+        // ext4_extent_get_blocks(inode_ref, *iblock, 1, &mut current_fsblk, true, &mut 0);
+        self.get_blocks(*iblock, 1, &mut current_fsblk, true, &mut 0);
+
+        current_block = current_fsblk;
+        *fblock = current_block;
+
+        self.inner
+            .inode
+            .ext4_inode_set_size(inode_size + BLOCK_SIZE as u64);
+
+        self.write_back_inode();
+
+        // let mut inode_ref = Ext4InodeRef::get_inode_ref(inode_ref.fs().self_ref.clone(), inode_ref.inode_num);
+
+        // log::info!("ext4_fs_append_inode_dblk inode {:x?} inode_size {:x?}", inode_ref.inode_num, inode_ref.inner.inode.size);
+        // log::info!("fblock {:x?}", fblock);
+    }
 
     pub fn ext4_fs_inode_blocks_init(&mut self) {
         // log::info!(
@@ -391,7 +774,7 @@ impl Ext4InodeRef {
         //     inode_ref.inner.inode.mode
         // );
 
-        let mut inode = self.inner.inode;
+        let inode = &mut self.inner.inode;
 
         let mode = inode.mode;
 
@@ -422,7 +805,6 @@ impl Ext4InodeRef {
     pub fn ext4_fs_alloc_inode(&mut self, filetype: u8) -> usize {
         let mut is_dir = false;
 
-        let fs = self.fs();
         let inode_size = self.fs().super_block.inode_size();
         let extra_size = self.fs().super_block.extra_size();
 
@@ -431,7 +813,7 @@ impl Ext4InodeRef {
         }
 
         let mut index = 0;
-        let rc = fs.ext4_ialloc_alloc_inode(&mut index, is_dir);
+        let rc = self.fs().ext4_ialloc_alloc_inode(&mut index, is_dir);
 
         self.inode_num = index;
 
@@ -472,44 +854,53 @@ impl Ext4InodeRef {
 
         EOK
     }
-}
 
-pub struct Inner {
-    pub inode: Ext4Inode,
-    pub weak_self: Weak<Ext4InodeRef>,
-}
+    pub fn ext4_find_all_extent(&self, extents: &mut Vec<Ext4Extent>) {
+        let extent_header = Ext4ExtentHeader::try_from(&self.inner.inode.block[..2]).unwrap();
+        // log::info!("extent_header {:x?}", extent_header);
+        let data = &self.inner.inode.block;
+        let depth = extent_header.depth;
 
-impl Inner {
-    pub fn inode(&self) -> Arc<Ext4InodeRef> {
-        self.weak_self.upgrade().unwrap()
+        self.ext4_add_extent(depth, data, extents, true);
     }
 
-    pub fn write_back_inode(&mut self) {
-        let weak_inode_ref = self.weak_self.clone().upgrade().unwrap();
-        let fs = weak_inode_ref.fs();
-        let block_device = fs.block_device.clone();
-        let super_block = fs.super_block.clone();
-        let inode_id = weak_inode_ref.inode_num;
-        self.inode
-            .sync_inode_to_disk_with_csum(block_device, &super_block, inode_id)
-            .unwrap()
-    }
-}
+    #[allow(unused)]
+    pub fn ext4_add_extent(
+        &self,
+        depth: u16,
+        data: &[u32],
+        extents: &mut Vec<Ext4Extent>,
+        first_level: bool,
+    ) {
+        let extent_header = Ext4ExtentHeader::try_from(data).unwrap();
+        let extent_entries = extent_header.entries_count;
+        // log::info!("extent_entries {:x?}", extent_entries);
+        if depth == 0 {
+            for en in 0..extent_entries {
+                let idx = (3 + en * 3) as usize;
+                let extent = Ext4Extent::try_from(&data[idx..]).unwrap();
 
-/// Ext4 inode-related operations.
-impl Ext4Inode {
-    /// Get a pointer to the extent header from an inode.
-    pub fn extent_header(&self) -> *const Ext4ExtentHeader {
-        &self.block as *const [u32; 15] as *const Ext4ExtentHeader
-    }
+                extents.push(extent)
+            }
+            return;
+        }
 
-    /// Get a mutable pointer to the extent header from an inode.
-    pub fn extent_header_mut(&mut self) -> *mut Ext4ExtentHeader {
-        &mut self.block as *mut [u32; 15] as *mut Ext4ExtentHeader
-    }
-
-    /// Get the depth of the extent tree from an inode.
-    pub unsafe fn extent_depth(&self) -> u16 {
-        (*self.extent_header()).depth
+        for en in 0..extent_entries {
+            let idx = (3 + en * 3) as usize;
+            if idx == 12 {
+                break;
+            }
+            let extent_index = Ext4ExtentIndex::try_from(&data[idx..]).unwrap();
+            let ei_leaf_lo = extent_index.leaf_lo;
+            let ei_leaf_hi = extent_index.leaf_hi;
+            let mut block = ei_leaf_lo;
+            block |= ((ei_leaf_hi as u32) << 31) << 1;
+            let data = self
+                .fs()
+                .block_device
+                .read_offset(block as usize * BLOCK_SIZE);
+            let data: Vec<u32> = unsafe { core::mem::transmute(data) };
+            self.ext4_add_extent(depth - 1, &data, extents, false);
+        }
     }
 }
