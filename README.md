@@ -1,17 +1,16 @@
 # a cross-platform rust ext4 crate support read/write/mkdir
 
-# read/write example
-
+## env
 wsl2 ubuntu22.04
 
 rust version nightly-2023-12-28
 
 rustc 1.77.0-nightly   
 
+## read/write example
 ```sh
-https://github.com/yuoo655/ext4_rs.git
+git clone https://github.com/yuoo655/ext4_rs.git
 git checkout dev
-python3 gen_test_files.py
 sh 1.sh
 ```
 
