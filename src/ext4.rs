@@ -6,8 +6,8 @@ use core::mem::size_of;
 use core::str;
 use core::*;
 
-use crate::ext4_structs::*;
 use crate::consts::*;
+use crate::ext4_structs::*;
 use crate::prelude::*;
 use crate::return_errno_with_message;
 use crate::utils::*;
@@ -120,7 +120,13 @@ impl Ext4 {
     }
 
     #[allow(unused)]
-    pub fn ext4_open(&self, file: &mut Ext4File, path: &str, flags: &str, file_expect: bool) -> Result<usize>{
+    pub fn ext4_open(
+        &self,
+        file: &mut Ext4File,
+        path: &str,
+        flags: &str,
+        file_expect: bool,
+    ) -> Result<usize> {
         let mut iflags = 0;
         let mut filetype = DirEntryType::EXT4_DE_UNKNOWN;
 
@@ -149,8 +155,7 @@ impl Ext4 {
         r
     }
 
-    pub fn ext4_file_close(&self, file: &mut Ext4File) -> Result<usize>{
-
+    pub fn ext4_file_close(&self, file: &mut Ext4File) -> Result<usize> {
         assert!(!file.mp.is_null());
 
         file.mp = core::ptr::null_mut();
@@ -159,10 +164,10 @@ impl Ext4 {
         file.fpos = 0;
         file.fsize = 0;
 
-        return Ok(EOK)
+        return Ok(EOK);
     }
     #[allow(unused)]
-    pub fn ext4_dir_mk(&self, path: &str) -> Result<usize>{
+    pub fn ext4_dir_mk(&self, path: &str) -> Result<usize> {
         let mut file = Ext4File::new();
         let flags = "w";
 
@@ -182,7 +187,13 @@ impl Ext4 {
 
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
 
-        let r = self.ext4_generic_open(&mut file, path, iflags, filetype.bits(), &mut root_inode_ref);
+        let r = self.ext4_generic_open(
+            &mut file,
+            path,
+            iflags,
+            filetype.bits(),
+            &mut root_inode_ref,
+        );
         r
     }
 
@@ -194,7 +205,7 @@ impl Ext4 {
         iflags: u32,
         ftype: u8,
         parent_inode: &mut Ext4InodeRef,
-    ) -> Result<usize>{
+    ) -> Result<usize> {
         let mut is_goal = false;
 
         let mp: &Ext4MountPoint = &self.mount_point;
@@ -227,7 +238,6 @@ impl Ext4 {
         loop {
             search_path = ext4_path_skip(search_path, "/");
             len = ext4_path_check(search_path, &mut is_goal);
-
 
             let r = ext4_dir_find_entry(
                 &mut search_parent,
@@ -280,7 +290,7 @@ impl Ext4 {
 
                 ext4_fs_put_inode_ref_csum(&mut search_parent);
                 ext4_fs_put_inode_ref_csum(&mut child_inode_ref);
-                ext4_fs_put_inode_ref_csum(parent_inode);                
+                ext4_fs_put_inode_ref_csum(parent_inode);
 
                 continue;
             }
@@ -342,8 +352,13 @@ impl Ext4 {
     }
 
     #[allow(unused)]
-    pub fn ext4_file_read(&self, ext4_file: &mut Ext4File, read_buf:&mut [u8], size:usize, read_cnt: &mut usize)-> Result<usize>{
-
+    pub fn ext4_file_read(
+        &self,
+        ext4_file: &mut Ext4File,
+        read_buf: &mut [u8],
+        size: usize,
+        read_cnt: &mut usize,
+    ) -> Result<usize> {
         if size == 0 {
             return Ok(EOK);
         }
@@ -353,17 +368,18 @@ impl Ext4 {
         // sync file size
         ext4_file.fsize = inode_ref.inner.inode.ext4_inode_get_size();
 
-        let is_softlink = inode_ref.inner.inode.ext4_inode_type(&self.super_block) == EXT4_INODE_MODE_SOFTLINK as u32;
+        let is_softlink = inode_ref.inner.inode.ext4_inode_type(&self.super_block)
+            == EXT4_INODE_MODE_SOFTLINK as u32;
 
-        if is_softlink{
+        if is_softlink {
             log::debug!("ext4_read unsupported softlink");
         }
 
         let block_size = BLOCK_SIZE;
 
         // 计算读取大小
-        let size_to_read = if size > (ext4_file.fsize as usize - ext4_file.fpos ) {
-            ext4_file.fsize as usize - ext4_file.fpos 
+        let size_to_read = if size > (ext4_file.fsize as usize - ext4_file.fpos) {
+            ext4_file.fsize as usize - ext4_file.fpos
         } else {
             size
         };
@@ -372,10 +388,8 @@ impl Ext4 {
         let iblock_last = ((ext4_file.fpos + size_to_read) / block_size) as u32;
         let mut unalg = (ext4_file.fpos % block_size) as u32;
 
-
         let mut offset = 0;
         let mut total_bytes_read = 0;
-
 
         if unalg > 0 {
             let first_block_read_len = core::cmp::min(block_size - unalg as usize, size_to_read);
@@ -386,20 +400,21 @@ impl Ext4 {
             // if r != EOK {
             //     return Err(Ext4Error::new(r));
             // }
-    
+
             if fblock != 0 {
                 let block_offset = fblock * block_size as u64 + unalg as u64;
                 let block_data = self.block_device.read_offset(block_offset as usize);
-    
+
                 // Copy data from block to the user buffer
-                read_buf[offset..offset + first_block_read_len].copy_from_slice(&block_data[0..first_block_read_len]);
+                read_buf[offset..offset + first_block_read_len]
+                    .copy_from_slice(&block_data[0..first_block_read_len]);
             } else {
                 // Handle the unwritten block by zeroing out the respective part of the buffer
                 for x in &mut read_buf[offset..offset + first_block_read_len] {
                     *x = 0;
                 }
             }
-    
+
             offset += first_block_read_len;
             total_bytes_read += first_block_read_len;
             ext4_file.fpos += first_block_read_len;
@@ -419,7 +434,9 @@ impl Ext4 {
             // }
 
             if fblock != 0 {
-                let block_data = self.block_device.read_offset((fblock * block_size as u64) as usize);
+                let block_data = self
+                    .block_device
+                    .read_offset((fblock * block_size as u64) as usize);
                 read_buf[offset..offset + read_length].copy_from_slice(&block_data[0..read_length]);
             } else {
                 // Handle the unwritten block by zeroing out the respective part of the buffer
@@ -436,9 +453,7 @@ impl Ext4 {
         }
 
         return Ok(EOK);
-
     }
-
 
     pub fn ext4_file_write(&self, ext4_file: &mut Ext4File, data: &[u8], size: usize) {
         let super_block_data = self.block_device.read_offset(BASE_OFFSET);
@@ -485,14 +500,149 @@ impl Ext4 {
 
     #[allow(unused)]
     pub fn ext4_file_remove(&self, path: &str) -> Result<usize> {
-        
-
         return_errno_with_message!(Errnum::ENOTSUP, "not support");
     }
 
     #[allow(unused)]
     pub fn ext4_dir_remove(&self, path: &str) -> Result<usize> {
         return_errno_with_message!(Errnum::ENOTSUP, "not support");
+    }
+
+    pub fn ext4_ialloc_alloc_inode(&self, index: &mut u32, is_dir: bool) {
+        let mut bgid = self.last_inode_bg_id;
+        let bg_count = self.super_block.block_groups_count();
+
+        while bgid <= bg_count {
+            if bgid == bg_count {
+                bgid = 0;
+                continue;
+            }
+
+            let block_device = self.block_device.clone();
+
+            let raw_data = self.block_device.read_offset(BASE_OFFSET);
+            let mut super_block = Ext4Superblock::try_from(raw_data).unwrap();
+
+            let mut bg =
+                Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
+
+            let mut free_inodes = bg.get_free_inodes_count();
+            let mut used_dirs = bg.get_used_dirs_count(&super_block);
+
+            if free_inodes > 0 {
+                let inode_bitmap_block = bg.get_inode_bitmap_block(&super_block);
+
+                let mut raw_data = self
+                    .block_device
+                    .read_offset(inode_bitmap_block as usize * BLOCK_SIZE);
+
+                let inodes_in_bg = super_block.get_inodes_in_group_cnt(bgid);
+
+                let bitmap_size: u32 = inodes_in_bg / 0x8;
+
+                let mut bitmap_data = &mut raw_data[..bitmap_size as usize];
+
+                let mut idx_in_bg = 0 as u32;
+
+                ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);
+                ext4_bmap_bit_set(&mut bitmap_data, idx_in_bg);
+
+                // update bitmap in disk
+                self.block_device
+                    .write_offset(inode_bitmap_block as usize * BLOCK_SIZE, &bitmap_data);
+
+                bg.set_block_group_ialloc_bitmap_csum(&super_block, &bitmap_data);
+
+                /* Modify filesystem counters */
+                free_inodes -= 1;
+                bg.set_free_inodes_count(&super_block, free_inodes);
+
+                /* Increment used directories counter */
+                if is_dir {
+                    used_dirs += 1;
+                    bg.set_used_dirs_count(&super_block, used_dirs);
+                }
+
+                /* Decrease unused inodes count */
+                let mut unused = bg.get_itable_unused(&super_block);
+                let free = inodes_in_bg - unused as u32;
+                if idx_in_bg >= free {
+                    unused = inodes_in_bg - (idx_in_bg + 1);
+                    bg.set_itable_unused(&super_block, unused);
+                }
+
+                bg.sync_to_disk_with_csum(block_device.clone(), bgid as usize, &super_block);
+                // bg.sync_block_group_to_disk(block_device.clone(), bgid as usize, &super_block);
+
+                /* Update superblock */
+                super_block.decrease_free_inodes_count();
+                // super_block.sync_super_block_to_disk(block_device.clone());
+
+                /* Compute the absolute i-nodex number */
+                let inodes_per_group = super_block.inodes_per_group();
+                let inode_num = bgid * inodes_per_group + (idx_in_bg + 1);
+                *index = inode_num;
+
+                // log::info!("alloc inode {:x?}", inode_num);
+                return;
+            }
+
+            bgid += 1;
+        }
+        log::info!("no free inode");
+    }
+
+    pub fn ext4_balloc_alloc_block(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        goal: Ext4Fsblk,
+        fblock: &mut Ext4Fsblk,
+    ) {    
+        let block_device = self.block_device.clone();
+    
+        let super_block_data = block_device.read_offset(BASE_OFFSET);
+        let mut super_block = Ext4Superblock::try_from(super_block_data).unwrap();
+    
+        // let inodes_per_group = super_block.inodes_per_group();
+        let blocks_per_group = super_block.blocks_per_group();
+    
+        let bgid = goal / blocks_per_group as u64;
+        let idx_in_bg = goal % blocks_per_group as u64;
+    
+        let mut bg = Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
+    
+        let block_bitmap_block = bg.get_block_bitmap_block(&super_block);
+        let mut raw_data = block_device.read_offset(block_bitmap_block as usize * BLOCK_SIZE);
+        let mut data: &mut Vec<u8> = &mut raw_data;
+        let mut rel_blk_idx = 0 as u32;
+    
+        ext4_bmap_bit_find_clr(data, idx_in_bg as u32, 0x8000, &mut rel_blk_idx);
+        *fblock = rel_blk_idx as u64;
+        ext4_bmap_bit_set(&mut data, rel_blk_idx);
+    
+        bg.set_block_group_balloc_bitmap_csum(&super_block, &data);
+        block_device.write_offset(block_bitmap_block as usize * BLOCK_SIZE, &data);
+    
+        /* Update superblock free blocks count */
+        let super_blk_free_blocks = super_block.free_blocks_count();
+        // super_blk_free_blocks -= 1;
+        super_block.set_free_blocks_count(super_blk_free_blocks);
+        super_block.sync_to_disk(block_device.clone());
+    
+        /* Update inode blocks (different block size!) count */
+        let mut inode_blocks = inode_ref.inner.inode.ext4_inode_get_blocks_count();
+        inode_blocks += 8;
+        inode_ref
+            .inner
+            .inode
+            .ext4_inode_set_blocks_count(inode_blocks as u32);
+        inode_ref.write_back_inode();
+    
+        /* Update block group free blocks count */
+        let mut fb_cnt = bg.get_free_blocks_count();
+        fb_cnt -= 1;
+        bg.set_free_blocks_count(fb_cnt);
+        bg.sync_to_disk_with_csum(block_device, bgid as usize, &super_block);
     }
 }
 
@@ -627,19 +777,19 @@ pub fn ext4_dir_add_entry(
 
     // init tail
     let ptr = ext4_block.block_data.as_mut_ptr();
-    let mut tail = unsafe{*(ptr.add(BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail)};
+    let mut tail = unsafe {
+        *(ptr.add(BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail)
+    };
     tail.rec_len = size_of::<Ext4DirEntryTail>() as u16;
     tail.reserved_ft = 0xDE;
     tail.reserved_zero1 = 0;
     tail.reserved_zero2 = 0;
-
 
     tail.ext4_dir_set_csum(
         &parent.fs().super_block,
         &new_entry,
         &ext4_block.block_data[..],
     );
-
 
     let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
     copy_diren_tail_to_array(&tail, &mut ext4_block.block_data, tail_offset);
@@ -652,7 +802,7 @@ pub fn ext4_dir_add_entry(
 
     ext4_block.sync_blk_to_disk(block_device.clone());
 
-	// struct ext4_block b;
+    // struct ext4_block b;
 
     EOK
 }
@@ -929,7 +1079,6 @@ pub fn ext4_dir_find_entry(
     ENOENT
 }
 
-
 #[allow(unused)]
 pub fn ext4_extent_get_blocks(
     inode_ref: &mut Ext4InodeRef,
@@ -941,7 +1090,7 @@ pub fn ext4_extent_get_blocks(
 ) {
     *result = 0;
     *blocks_count = 0;
-    
+
     let mut path: Option<Vec<Ext4ExtentPath>> = None;
     let err = ext4_find_extent(inode_ref, iblock, &mut path, 0);
 
@@ -951,7 +1100,7 @@ pub fn ext4_extent_get_blocks(
         return;
     }
 
-    let depth = unsafe { *ext4_inode_hdr(inode) }.depth as usize;
+    let depth = unsafe{inode_ref.inner.inode.extent_depth()} as usize;
     let mut path = path.unwrap();
 
     if !path[depth].extent.is_null() {
@@ -1056,7 +1205,6 @@ pub fn ext4_ext_pblock(ex: &Ext4Extent) -> u32 {
 
     block = ex.start_lo;
     block |= ((ex.start_hi as u32) << 31) << 1;
-    
 
     block
 }
@@ -1195,9 +1343,9 @@ pub fn ext4_ext_insert_leaf(
 
     if ex.is_null() {
         let first_extent = ext_first_extent(eh);
-        
+
         (*path).extent = first_extent;
-         
+
         unsafe {
             if (*eh).entries_count == (*eh).max_entries_count {
                 *need_split = true;
@@ -1315,7 +1463,7 @@ fn ext4_find_extent(
     let mut eh: &Ext4ExtentHeader;
     let mut buf_block: Ext4Fsblk = 0;
     let mut path = orig_path.take(); // Take the path out of the Option, which may replace it with None
-    let depth = unsafe { *ext4_inode_hdr(inode) }.depth;
+    let depth = unsafe{inode_ref.inner.inode.extent_depth()};
 
     let mut ppos = 0;
     let mut i: u16;
@@ -1338,7 +1486,8 @@ fn ext4_find_extent(
 
     i = depth;
     while i > 0 {
-        ext4_ext_binsearch_idx(&mut path[ppos], block);
+        path[ppos].binsearch_extentidx(block);
+        // ext4_ext_binsearch_idx(&mut path[ppos], block);
         path[ppos].p_block = ext4_idx_pblock(path[ppos].index);
         path[ppos].depth = i;
         path[ppos].extent = core::ptr::null_mut();
@@ -1352,7 +1501,7 @@ fn ext4_find_extent(
     path[ppos].extent = core::ptr::null_mut();
     path[ppos].index = core::ptr::null_mut();
 
-    ext4_ext_search(&mut path[ppos], block);
+    path[ppos].search_extent(block);
     if !path[ppos].extent.is_null() {
         path[ppos].p_block = ext4_ext_pblock(&unsafe { *(path[ppos].extent) }) as u64;
     }
@@ -1362,53 +1511,6 @@ fn ext4_find_extent(
     EOK
 }
 
-pub fn ext4_ext_find_extent(eh: *mut Ext4ExtentHeader, block: Ext4Lblk) -> *mut Ext4Extent {
-    // 初始化一些变量
-    let mut low: i32;
-    let mut high: i32;
-    let mut mid: i32;
-    let mut ex: *mut Ext4Extent;
-
-    // 如果头部的extent数为0，返回空指针
-    if eh.is_null() || unsafe { (*eh).entries_count } == 0 {
-        return ptr::null_mut();
-    }
-
-    // 从头部获取第一个extent的指针
-    ex = ext4_first_extent_mut(eh);
-
-    // 如果头部的深度不为0，返回空指针
-    if unsafe { (*eh).depth } != 0 {
-        return ptr::null_mut();
-    }
-
-    // 使用二分查找法在extent数组中查找逻辑块号
-    low = 0;
-    high = unsafe { (*eh).entries_count - 1 } as i32;
-    while low <= high {
-        // 计算中间位置
-        mid = (low + high) / 2;
-
-        // 获取中间位置的extent的指针
-        ex = unsafe { ex.add(mid as usize) };
-
-        // 比较extent的逻辑块号和目标逻辑块号
-        if block >= unsafe { (*ex).first_block } {
-            // 如果目标逻辑块号大于等于extent的逻辑块号，说明目标在右半部分
-            low = mid + 1;
-        } else {
-            // 如果目标逻辑块号小于extent的逻辑块号，说明目标在左半部分
-            high = mid - 1;
-        }
-    }
-
-    // 如果没有找到目标，返回最后一个小于目标的extent的指针
-    if high < 0 {
-        return ptr::null_mut();
-    } else {
-        return unsafe { ex.add(high as usize) };
-    }
-}
 
 #[allow(unused)]
 pub fn ext4_fs_get_inode_dblk_idx(
@@ -1467,8 +1569,6 @@ pub fn ext4_dir_find_in_block(
     let mut offset = 0;
 
     while offset < block.block_data.len() {
-
-
         let de = Ext4DirEntry::try_from(&block.block_data[offset..]).unwrap();
 
         offset = offset + de.entry_len as usize;

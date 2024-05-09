@@ -1,15 +1,15 @@
 use crate::consts::*;
 // use crate::BASE_OFFSET;
-use crate::prelude::*;
 use super::*;
+use crate::prelude::*;
 use core::mem::size_of;
 // use super::*;
 // use crate::consts::*;
 // use crate::prelude::*;
 use crate::utils::*;
-use crate::BLOCK_SIZE;
 use crate::BlockDevice;
 use crate::Ext4;
+use crate::BLOCK_SIZE;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +54,6 @@ pub struct Linux2 {
     pub l_i_reserved: u16,
 }
 
-
 impl TryFrom<&[u8]> for Ext4Inode {
     type Error = u64;
     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
@@ -71,11 +70,11 @@ impl Ext4Inode {
         self.mode
     }
 
-    pub fn ext4_inode_type(&self, super_block: &Ext4Superblock) -> u32{
+    pub fn ext4_inode_type(&self, super_block: &Ext4Superblock) -> u32 {
         let mut v = self.mode;
 
-        if super_block.creator_os == EXT4_SUPERBLOCK_OS_HURD{
-            v |= ((self.osd2.l_i_file_acl_high as u32 ) << 16) as u16;
+        if super_block.creator_os == EXT4_SUPERBLOCK_OS_HURD {
+            v |= ((self.osd2.l_i_file_acl_high as u32) << 16) as u16;
         }
 
         (v & EXT4_INODE_MODE_TYPE_MASK) as u32
@@ -102,11 +101,11 @@ impl Ext4Inode {
     }
 
     pub fn ext4_inode_set_size(&mut self, size: u64) {
-        self.size = ((size << 32) >> 32)as u32;
+        self.size = ((size << 32) >> 32) as u32;
         self.size_hi = (size >> 32) as u32;
     }
 
-    pub fn ext4_inode_get_size(&self) -> u64{
+    pub fn ext4_inode_get_size(&self) -> u64 {
         self.size as u64 | ((self.size_hi as u64) << 32)
     }
 
@@ -167,13 +166,13 @@ impl Ext4Inode {
         header_ptr
     }
 
-    pub fn ext4_extent_tree_init(&mut self){
+    pub fn ext4_extent_tree_init(&mut self) {
         let mut header = Ext4ExtentHeader::default();
-        header.ext4_extent_header_set_depth(0);
-        header.ext4_extent_header_set_entries_count(0);
-        header.ext4_extent_header_set_generation(0);
-        header.ext4_extent_header_set_magic();
-        header.ext4_extent_header_set_max_entries_count(4 as u16);
+        header.set_depth(0);
+        header.set_entries_count(0);
+        header.set_generation(0);
+        header.set_magic();
+        header.set_max_entries_count(4 as u16);
 
         unsafe {
             let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
@@ -195,8 +194,6 @@ impl Ext4Inode {
     //     self.osd2.l_i_blocks_high = (inode_blocks >> 32) as u16;
     // }
 }
-
-
 
 impl Ext4Inode {
     pub fn get_inode_disk_pos(
@@ -292,7 +289,6 @@ impl Ext4Inode {
     }
 }
 
-
 pub fn copy_inode_to_array(inode: &Ext4Inode, array: &mut [u8]) {
     unsafe {
         let inode_ptr = inode as *const Ext4Inode as *const u8;
@@ -300,8 +296,6 @@ pub fn copy_inode_to_array(inode: &Ext4Inode, array: &mut [u8]) {
         core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
     }
 }
-
-
 
 pub struct Ext4InodeRef {
     pub inode_num: u32,
@@ -361,13 +355,13 @@ impl Ext4InodeRef {
         inode
     }
 
-
     pub fn write_back_inode(&mut self) {
         let fs = self.fs();
         let block_device = fs.block_device.clone();
         let super_block = fs.super_block.clone();
         let inode_id = self.inode_num;
-        self.inner.inode
+        self.inner
+            .inode
             .sync_inode_to_disk_with_csum(block_device, &super_block, inode_id)
             .unwrap()
     }
@@ -377,9 +371,106 @@ impl Ext4InodeRef {
         let block_device = fs.block_device.clone();
         let super_block = fs.super_block.clone();
         let inode_id = self.inode_num;
-        self.inner.inode
+        self.inner
+            .inode
             .sync_inode_to_disk(block_device, &super_block, inode_id)
             .unwrap()
+    }
+
+    pub fn ext4_fs_put_inode_ref_csum(&mut self) {
+        self.write_back_inode();
+    }
+
+    pub fn ext4_fs_put_inode_ref(&mut self) {
+        self.write_back_inode_without_csum();
+    }
+
+    pub fn ext4_fs_inode_blocks_init(&mut self) {
+        // log::info!(
+        //     "ext4_fs_inode_blocks_init mode {:x?}",
+        //     inode_ref.inner.inode.mode
+        // );
+
+        let mut inode = self.inner.inode;
+
+        let mode = inode.mode;
+
+        let inode_type = InodeMode::from_bits(mode & EXT4_INODE_MODE_TYPE_MASK as u16).unwrap();
+
+        match inode_type {
+            InodeMode::S_IFDIR => {}
+            InodeMode::S_IFREG => {}
+            /* Reset blocks array. For inode which is not directory or file, just
+             * fill in blocks with 0 */
+            _ => {
+                log::info!("inode_type {:?}", inode_type);
+                return;
+            }
+        }
+
+        /* Initialize extents */
+        inode.ext4_inode_set_flags(EXT4_INODE_FLAG_EXTENTS as u32);
+
+        /* Initialize extent root header */
+        inode.ext4_extent_tree_init();
+        // log::info!("inode iblock {:x?}", inode.block);
+
+        // inode_ref.dirty = true;
+    }
+
+    #[allow(unused)]
+    pub fn ext4_fs_alloc_inode(&mut self, filetype: u8) -> usize {
+        let mut is_dir = false;
+
+        let fs = self.fs();
+        let inode_size = self.fs().super_block.inode_size();
+        let extra_size = self.fs().super_block.extra_size();
+
+        if filetype == DirEntryType::EXT4_DE_DIR.bits() {
+            is_dir = true;
+        }
+
+        let mut index = 0;
+        let rc = fs.ext4_ialloc_alloc_inode(&mut index, is_dir);
+
+        self.inode_num = index;
+
+        let inode = &mut self.inner.inode;
+
+        /* Initialize i-node */
+        let mut mode = 0 as u16;
+
+        if is_dir {
+            mode = 0o777;
+            mode |= EXT4_INODE_MODE_DIRECTORY as u16;
+        } else if filetype == 0x7 {
+            mode = 0o777;
+            mode |= EXT4_INODE_MODE_SOFTLINK as u16;
+        } else {
+            mode = 0o666;
+            // log::info!("ext4_fs_correspond_inode_mode {:x?}", ext4_fs_correspond_inode_mode(filetype));
+            let t = ext4_fs_correspond_inode_mode(filetype);
+            mode |= t as u16;
+        }
+
+        inode.ext4_inode_set_mode(mode);
+        inode.ext4_inode_set_links_cnt(0);
+        inode.ext4_inode_set_uid(0);
+        inode.ext4_inode_set_gid(0);
+        inode.ext4_inode_set_size(0);
+        inode.ext4_inode_set_access_time(0);
+        inode.ext4_inode_set_change_inode_time(0);
+        inode.ext4_inode_set_modif_time(0);
+        inode.ext4_inode_set_del_time(0);
+        inode.ext4_inode_set_flags(0);
+        inode.ext4_inode_set_generation(0);
+
+        if inode_size > EXT4_GOOD_OLD_INODE_SIZE {
+            let extra_size = extra_size;
+            inode.ext4_inode_set_extra_isize(extra_size);
+        }
+
+        EOK
     }
 }
 
@@ -402,5 +493,23 @@ impl Inner {
         self.inode
             .sync_inode_to_disk_with_csum(block_device, &super_block, inode_id)
             .unwrap()
+    }
+}
+
+/// Ext4 inode-related operations.
+impl Ext4Inode {
+    /// Get a pointer to the extent header from an inode.
+    pub fn extent_header(&self) -> *const Ext4ExtentHeader {
+        &self.block as *const [u32; 15] as *const Ext4ExtentHeader
+    }
+
+    /// Get a mutable pointer to the extent header from an inode.
+    pub fn extent_header_mut(&mut self) -> *mut Ext4ExtentHeader {
+        &mut self.block as *mut [u32; 15] as *mut Ext4ExtentHeader
+    }
+
+    /// Get the depth of the extent tree from an inode.
+    pub unsafe fn extent_depth(&self) -> u16 {
+        (*self.extent_header()).depth
     }
 }
