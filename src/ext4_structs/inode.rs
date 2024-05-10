@@ -413,6 +413,15 @@ impl Ext4Inode {
         &self.block as *const [u32; 15] as *const Ext4ExtentHeader
     }
 
+    /// Get a pointer to the extent header from an inode.
+    pub fn extent_header_new(&self) -> &Ext4ExtentHeader {
+        unsafe {
+            (&self.block as *const [u32; 15] as *const Ext4ExtentHeader)
+                .as_ref()
+                .unwrap()
+        }
+    }
+
     /// Get a mutable pointer to the extent header from an inode.
     pub fn extent_header_mut(&mut self) -> *mut Ext4ExtentHeader {
         &mut self.block as *mut [u32; 15] as *mut Ext4ExtentHeader
@@ -561,6 +570,7 @@ impl Ext4InodeRef {
             // self.allocate_and_insert_new_extent(iblock, max_blocks, result, blocks_count);
         }
     }
+
     #[allow(unused)]
     pub fn balloc_alloc_block(&mut self, goal: Ext4Fsblk) -> u64 {
         // let mut fblock = 0;
@@ -712,7 +722,7 @@ impl Ext4InodeRef {
 
         let mut blocks_count = 0;
         // crate::ext4_extent_get_blocks(self,*iblock, 1, &mut current_fsblk, false, &mut blocks_count);
-        self.get_blocks(*iblock, 1, &mut current_fsblk, false, &mut blocks_count);
+        self.get_blocks_new(*iblock, 1, &mut current_fsblk, false, &mut blocks_count);
 
         current_block = current_fsblk;
         *fblock = current_block;
@@ -901,6 +911,88 @@ impl Ext4InodeRef {
                 .read_offset(block as usize * BLOCK_SIZE);
             let data: Vec<u32> = unsafe { core::mem::transmute(data) };
             self.ext4_add_extent(depth - 1, &data, extents, false);
+        }
+    }
+}
+
+impl Ext4InodeRef {
+    #[allow(unused)]
+    /// Searches for an extent and initializes path data structures accordingly.
+    pub fn find_extent_new(&mut self, block_id: Ext4Lblk) -> Vec<Ext4ExtentPathNew> {
+        let mut path: Vec<Ext4ExtentPathNew> = Vec::new();
+
+        let root_data = &self.inner.inode.block[..];
+        let root_tree = ExtentTreeNode::load_from_header(&root_data[..]);
+
+        let fs = self.fs();
+        let block_device = fs.block_device.clone();
+
+        root_tree.find_extent(block_id, block_device, &mut path);
+
+        path
+    }
+
+    #[allow(unused)]
+    /// Gets blocks from an inode and manages extent creation if necessary.
+    pub fn get_blocks_new(
+        &mut self,
+        iblock: Ext4Lblk,
+        max_blocks: u32,
+        result: &mut Ext4Fsblk,
+        create: bool,
+        blocks_count: &mut u32,
+    ) {
+        *result = 0;
+        *blocks_count = 0;
+
+        let mut path: Vec<Ext4ExtentPathNew> = self.find_extent_new(iblock);
+
+        let last = path.last().unwrap();
+
+        if let Some(pblock) = last.p_block {
+            let ee_start = pblock as u32;
+            let ee_block = last.first_block as u32;
+            let ee_len = last.block_count as u32;
+
+            if iblock >= ee_block && iblock < ee_block + ee_len as u32 {
+                let allocated = ee_len - (iblock - ee_block) as u32;
+                *blocks_count = allocated as u32;
+            }
+
+            let ex = Ext4Extent {
+                first_block: ee_block,
+                block_count: ee_len as u16,
+                start_hi: last.start_hi,
+                start_lo: last.start_lo,
+            };
+            if !create || ex.is_unwritten() {
+                *result = (iblock - ee_block + ee_start) as u64;
+                return; // Early return if no new extent needed
+            }
+        }
+        if create {
+            let mut allocated: u32 = 0;
+            let next = EXT_MAX_BLOCKS;
+
+            allocated = next - iblock;
+            if allocated > max_blocks {
+                allocated = max_blocks;
+            }
+
+            let mut newex: Ext4Extent = Ext4Extent::default();
+
+            let goal = 0;
+
+            let mut alloc_block = 0;
+            alloc_block = self.balloc_alloc_block(goal as u64);
+
+            *result = alloc_block;
+
+            // 创建并插入新的extent
+            newex.first_block = iblock;
+            newex.start_lo = alloc_block as u32 & 0xffffffff;
+            newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
+            newex.block_count = allocated as u16;
         }
     }
 }
