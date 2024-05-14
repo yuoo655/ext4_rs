@@ -237,9 +237,9 @@ impl Ext4BlockGroup {
     }
     
     /// Set the count of free blocks in this block group.
-    pub fn set_free_blocks_count(&mut self, cnt: u64) {
-        self.free_blocks_count_lo = ((cnt << 32) >> 32) as u16;
-        self.free_blocks_count_hi = (cnt >> 32) as u16;
+    pub fn set_free_blocks_count(&mut self, cnt: u32) {
+        self.free_blocks_count_lo = ((cnt << 16) >> 16) as u16;
+        self.free_blocks_count_hi = (cnt >> 16) as u16;
     }
 }
 

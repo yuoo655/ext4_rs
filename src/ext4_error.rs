@@ -30,7 +30,7 @@ pub enum Errnum {
 }
 
 /// error used in this crate
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(unused)]
 pub struct Ext4Error {
     errno: Errnum,

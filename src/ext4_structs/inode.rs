@@ -604,10 +604,10 @@ impl Ext4InodeRef {
         block_device.write_offset(block_bitmap_block as usize * BLOCK_SIZE, &data);
 
         /* Update superblock free blocks count */
-        let super_blk_free_blocks = super_block.free_blocks_count();
-        // super_blk_free_blocks -= 1;
+        let mut super_blk_free_blocks = super_block.free_blocks_count();
+        super_blk_free_blocks -= 1;
         super_block.set_free_blocks_count(super_blk_free_blocks);
-        super_block.sync_to_disk(block_device.clone());
+        super_block.sync_to_disk_with_csum(block_device.clone());
 
         /* Update inode blocks (different block size!) count */
         let mut inode_blocks = self.inner.inode.ext4_inode_get_blocks_count();
@@ -620,7 +620,7 @@ impl Ext4InodeRef {
         /* Update block group free blocks count */
         let mut fb_cnt = bg.get_free_blocks_count();
         fb_cnt -= 1;
-        bg.set_free_blocks_count(fb_cnt);
+        bg.set_free_blocks_count(fb_cnt as u32);
         bg.sync_to_disk_with_csum(block_device, bgid as usize, &super_block);
 
         rel_blk_idx as u64
@@ -994,5 +994,22 @@ impl Ext4InodeRef {
             newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
             newex.block_count = allocated as u16;
         }
+    }
+}
+
+
+impl Ext4InodeRef{
+    pub fn ext4_dir_set_csum(&self,  dst_blk: &mut Ext4Block) {
+        let parent_de = Ext4DirEntry::try_from(&dst_blk.block_data[..]).unwrap();
+        let mut tail = Ext4DirEntryTail::from(&mut dst_blk.block_data, BLOCK_SIZE).unwrap();
+
+        tail.ext4_dir_set_csum(
+            &self.fs().super_block,
+            &parent_de,
+            &dst_blk.block_data[..],
+        );
+
+
+        tail.copy_to_slice(&mut dst_blk.block_data);
     }
 }

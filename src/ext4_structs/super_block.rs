@@ -227,7 +227,17 @@ impl Ext4Superblock {
         block_device.write_offset(BASE_OFFSET, data);
     }
 
-    pub fn sync_to_disk_with_csum(&self, block_device: Arc<dyn BlockDevice>) {
+    pub fn sync_to_disk_with_csum(&mut self, block_device: Arc<dyn BlockDevice>) {
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
+        };
+        let checksum = ext4_crc32c(
+            EXT4_CRC32_INIT,
+            &data,
+            0x3fc,
+        );
+
+        self.checksum = checksum;
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
         };

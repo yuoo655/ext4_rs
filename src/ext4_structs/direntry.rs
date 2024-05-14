@@ -121,7 +121,14 @@ impl Ext4DirEntry{
         dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntry>(), data.iter().cloned());
         // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntry>()], data[..]);
     }
-
+    pub fn copy_to_slice(&self, array: &mut [u8], offset: usize) {
+        let de_ptr = self as *const Ext4DirEntry as *const u8;
+        let array_ptr = array as *mut [u8] as *mut u8;
+        let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
+        unsafe {
+            core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
+        }
+    }
 }
 
 
@@ -154,6 +161,16 @@ pub struct Ext4DirEntryTail {
 }
 
 impl Ext4DirEntryTail{
+
+    pub fn new() -> Self {
+        Self{
+            reserved_zero1: 0,
+            rec_len: core::mem::size_of::<Ext4DirEntryTail>() as u16,
+            reserved_zero2: 0,
+            reserved_ft: 0xDE,
+            checksum: 0,
+        }
+    }
 
     pub fn from(data: &mut [u8], blocksize: usize) -> Option<Self> {
         unsafe {
@@ -199,27 +216,29 @@ impl Ext4DirEntryTail{
         block_device.write_offset(dst_blk.disk_block_id as usize * BLOCK_SIZE, &dst_blk.block_data);
     }
 
-
-
-}
-
-
-pub fn copy_diren_to_array(diren: &Ext4DirEntry, array: &mut [u8]) {
-    unsafe {
-        let diren_ptr = diren as *const Ext4DirEntry as *const u8;
+    pub fn copy_to_slice(&self, array: &mut [u8]) {
+        let offset = BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>();
+        let de_ptr = self as *const Ext4DirEntryTail as *const u8;
         let array_ptr = array as *mut [u8] as *mut u8;
-        core::ptr::copy_nonoverlapping(diren_ptr, array_ptr, core::mem::size_of::<Ext4DirEntry>());
+        let count = core::mem::size_of::<Ext4DirEntryTail>();
+        unsafe {
+            core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
+        }
     }
 }
+
 
 pub struct Ext4DirSearchResult<'a> {
     pub block: Ext4Block<'a>,
     pub dentry: Ext4DirEntry,
+    pub offset: usize,
+    pub last_offset : usize,
+    pub block_id: usize,
 }
 
 impl<'a> Ext4DirSearchResult<'a> {
     pub fn new(block: Ext4Block<'a>, dentry: Ext4DirEntry) -> Self {
-        Self { block, dentry }
+        Self { block, dentry, offset:0 , last_offset:0 , block_id: 0}
     }
 }
 

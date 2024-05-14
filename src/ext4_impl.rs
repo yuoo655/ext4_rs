@@ -232,39 +232,21 @@ impl Ext4 {
         let mut new_entry = Ext4DirEntry::default();
         let el = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
         self.dir_write_entry(&mut new_entry, el as u16, &child, path, len);
+        new_entry.copy_to_slice(&mut ext4_block.block_data, 0);
+
 
         copy_dir_entry_to_array(&new_entry, &mut ext4_block.block_data, 0);
 
         // init tail
-        let ptr = ext4_block.block_data.as_mut_ptr();
-        let mut tail = unsafe {
-            *(ptr.add(BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>())
-                as *mut Ext4DirEntryTail)
-        };
-        tail.rec_len = size_of::<Ext4DirEntryTail>() as u16;
-        tail.reserved_ft = 0xDE;
-        tail.reserved_zero1 = 0;
-        tail.reserved_zero2 = 0;
+        let tail = Ext4DirEntryTail::new();
+        tail.copy_to_slice(&mut ext4_block.block_data);
 
-        tail.ext4_dir_set_csum(
-            &parent.fs().super_block,
-            &new_entry,
-            &ext4_block.block_data[..],
-        );
 
-        let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
-        copy_diren_tail_to_array(&tail, &mut ext4_block.block_data, tail_offset);
+        // set csum
+        parent.ext4_dir_set_csum(&mut ext4_block);
 
-        tail.ext4_dir_set_csum(
-            &parent.fs().super_block,
-            &new_entry,
-            &ext4_block.block_data[..],
-        );
-
+        // sync to disk
         ext4_block.sync_blk_to_disk(block_device.clone());
-
-        // struct ext4_block b;
-
         EOK
     }
 
@@ -316,31 +298,16 @@ impl Ext4 {
                         name_len,
                     );
 
-                    // update parent new_de to blk_data
-                    copy_dir_entry_to_array(&de, &mut dst_blk.block_data, offset);
-                    copy_dir_entry_to_array(&new_entry, &mut dst_blk.block_data, offset + sz);
+                    // update parent_de and new_de to blk_data
+                    de.copy_to_slice(&mut dst_blk.block_data, offset);
+                    new_entry.copy_to_slice(&mut dst_blk.block_data, offset + sz);
+                    
 
                     // set tail csum
-                    let mut tail =
-                        Ext4DirEntryTail::from(&mut dst_blk.block_data, BLOCK_SIZE).unwrap();
-                    let block_device = parent.fs().block_device.clone();
-                    tail.ext4_dir_set_csum(
-                        &parent.fs().super_block,
-                        &de,
-                        &dst_blk.block_data[offset..],
-                    );
-
-                    let parent_de = Ext4DirEntry::try_from(&dst_blk.block_data[..]).unwrap();
-                    tail.ext4_dir_set_csum(
-                        &parent.fs().super_block,
-                        &parent_de,
-                        &dst_blk.block_data[..],
-                    );
-
-                    let tail_offset = BLOCK_SIZE - size_of::<Ext4DirEntryTail>();
-                    copy_diren_tail_to_array(&tail, &mut dst_blk.block_data, tail_offset);
-
+                    parent.ext4_dir_set_csum(dst_blk);
+                    
                     // sync to disk
+                    let block_device = parent.fs().block_device.clone();
                     dst_blk.sync_blk_to_disk(block_device.clone());
 
                     return EOK;
@@ -391,7 +358,7 @@ impl Ext4 {
         name: &str,
         name_len: u32,
         result: &mut Ext4DirSearchResult,
-    ) -> usize {
+    ) -> Result<usize> {
         // log::info!("ext4_dir_find_entry parent {:x?} {:?}",parent.inode_num,  name);
         let mut iblock = 0;
         let mut fblock: Ext4Fsblk = 0;
@@ -401,7 +368,6 @@ impl Ext4 {
 
         while iblock < total_blocks {
             parent.get_inode_dblk_idx(&mut iblock, &mut fblock, false);
-
             // load_block
             let mut data = parent
                 .fs()
@@ -415,14 +381,17 @@ impl Ext4 {
             };
 
             let r = self.dir_find_in_block(&mut ext4_block, name, name_len, result);
+
+            result.block_id = fblock as usize;
+
             if r {
-                return EOK;
+                return Ok(EOK);
             }
 
             iblock += 1
         }
 
-        ENOENT
+        return_errno_with_message!(Errnum::ENOENT, "file not found");
     }
 
     pub fn dir_find_in_block(
@@ -437,6 +406,7 @@ impl Ext4 {
         while offset < block.block_data.len() {
             let de = Ext4DirEntry::try_from(&block.block_data[offset..]).unwrap();
 
+            result.last_offset = offset;
             offset = offset + de.entry_len as usize;
             if de.inode == 0 {
                 continue;
@@ -448,6 +418,7 @@ impl Ext4 {
                 if name_len == de.name_len as u32 {
                     if name.to_string() == s {
                         result.dentry = de;
+                        result.offset = offset;
                         return true;
                     }
                 }
