@@ -1,0 +1,11 @@
+{
+    "name": "ext4_rs",
+    "description": "This is a cross-platform ext4 file system",
+    "authors": [{
+      "name": "yuoo655",
+      "email": "lenuulan@gmail.com"
+    }],
+    "keywords": ["ext4", "file system"],
+    "repo": "yuoo655/ext4_rs",
+    "doc_url": "https://github.com/yuoo655/ext4_rs/README.md"
+  }
