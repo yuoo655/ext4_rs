@@ -616,28 +616,41 @@ impl Ext4 {
 
 
     pub fn read_dir_entry(&self, inode: u64) -> Vec<Ext4DirEntry> {
-        let block_dev = self.block_device.clone();
-        let inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), inode as u32);
-        let mut extents: Vec<Ext4Extent> = Vec::new();
-        inode_ref.ext4_find_all_extent(&mut extents);
+        let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), inode as u32);
 
-        let mut entries = Vec::<Ext4DirEntry>::new();
+        let mut iblock = 0;
+        let block_size = inode_ref.fs().super_block.block_size();
+        let inode_size = inode_ref.inner.inode.inode_get_size();
+        let total_blocks = inode_size as u32 / block_size;
+        let mut fblock: Ext4Fsblk = 0;
 
-        for e in extents{
-            let blk_no: u64 = ((e.start_lo as u64) << 32) | e.start_hi as u64;
-    
-            for i in 0..e.block_count{
-                let block = block_dev.read_offset((blk_no as usize + i as usize) * BLOCK_SIZE);
-                let mut offset = 0;
-                while offset < block.len() {
-                    let de = Ext4DirEntry::try_from(&block[offset..]).unwrap();
-                    offset = offset + de.entry_len as usize;
-                    if de.inode == 0 {
-                        continue;
-                    }
-                    entries.push(de);
+        let mut entries = Vec::new();
+
+        while iblock < total_blocks {
+            inode_ref.get_inode_dblk_idx(&mut iblock, &mut fblock, false);
+            // load_block
+            let mut data = inode_ref
+                .fs()
+                .block_device
+                .read_offset(fblock as usize * BLOCK_SIZE);
+            let ext4_block = Ext4Block {
+                logical_block_id: iblock,
+                disk_block_id: fblock,
+                block_data: &mut data,
+                dirty: false,
+            };
+
+            let mut offset = 0;
+            while offset < ext4_block.block_data.len() {
+                let de = Ext4DirEntry::try_from(&ext4_block.block_data[offset..]).unwrap();
+                offset = offset + de.entry_len as usize;
+                if de.inode == 0 {
+                    continue;
                 }
+
+                entries.push(de);
             }
+            iblock += 1
         }
         entries
     }
