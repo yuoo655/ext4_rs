@@ -430,6 +430,48 @@ impl Ext4 {
         Ok(EOK)
     }
 
+    #[allow(unused)]
+    pub fn ext4_open_new(
+        &self,
+        file: &mut Ext4File,
+        path: &str,
+        flags: &str,
+        file_expect: bool,
+    ) -> Result<usize> {
+        let mut iflags = 0;
+        let mut filetype = DirEntryType::EXT4_DE_UNKNOWN;
+
+        // get mount point
+        file.mp = self.mount_point.clone();
+
+        // get open flags
+        iflags = self.ext4_parse_flags(flags).unwrap();
+
+        // file for dir
+        if file_expect {
+            filetype = DirEntryType::EXT4_DE_REG_FILE;
+        } else {
+            filetype = DirEntryType::EXT4_DE_DIR;
+        }
+
+        if iflags & O_CREAT != 0 {
+            self.ext4_trans_start();
+        }
+
+        let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
+
+        let mut name_off = 0;
+        let r = self.ext4_generic_open2(
+            file,
+            path,
+            iflags,
+            filetype.bits(),
+            &mut root_inode_ref,
+            &mut name_off,
+        );
+        r
+    }
+
     // read all extent
     #[allow(unused)]
     pub fn ext4_file_read_old(&self, ext4_file: &mut Ext4File) -> Vec<u8> {
