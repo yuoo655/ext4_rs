@@ -519,6 +519,12 @@ impl Ext4 {
         size: usize,
         read_cnt: &mut usize,
     ) -> Result<usize> {
+
+        if ext4_file.fpos > ext4_file.fsize as usize {
+            log::error!("read offset exceeds file size");
+            return_errno_with_message!(Errnum::EINVAL, "read offset exceeds file size")
+        }
+
         if size == 0 {
             return Ok(EOK);
         }
