@@ -122,7 +122,7 @@ impl Ext4 {
         name: &str,
         name_len: u32,
     ) -> usize {
-        // log::info!("link parent inode {:x?} child inode {:x?} name {:?}", parent.inode_num, child.inode_num, name);
+        log::trace!("link parent inode {:x?} child inode {:x?} name {:?}", parent.inode_num, child.inode_num, name);
         /* Add entry to parent directory */
         let r = self.ext4_dir_add_entry(parent, child, name, name_len);
 
@@ -174,7 +174,7 @@ impl Ext4 {
 
         let mut fblock: Ext4Fsblk = 0;
 
-        // log::info!("ext4_dir_add_entry parent inode {:x?} inode_size {:x?}", parent.inode_num, inode_size);
+        log::trace!("ext4_dir_add_entry parent inode {:x?} inode_size {:x?}", parent.inode_num, inode_size);
         while iblock < total_blocks {
             parent.get_inode_dblk_idx(&mut iblock, &mut fblock, false);
 
@@ -260,6 +260,8 @@ impl Ext4 {
         name: &str,
         name_len: u32,
     ) -> usize {
+
+        log::trace!("dir_try_insert_entry");
         let mut required_len = core::mem::size_of::<Ext4DirEntry>() + name_len as usize;
 
         if required_len % 4 != 0 {

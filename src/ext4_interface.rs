@@ -299,7 +299,7 @@ impl Ext4 {
 
             if is_goal {
                 let current_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), dir_search_result.dentry.inode);
-                file.inode = current_inode_ref.inode_num;
+                file.inode = dir_search_result.dentry.inode;
                 file.fpos = 0;
                 file.fsize = current_inode_ref.inner.inode.inode_get_size();
                 return Ok(EOK);
