@@ -614,6 +614,34 @@ impl Ext4 {
         root_inode_ref.write_back_inode();
     }
 
+
+    pub fn read_dir_entry(&self, inode: u64) -> Vec<Ext4DirEntry> {
+        let block_dev = self.block_device.clone();
+        let inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), inode as u32);
+        let mut extents: Vec<Ext4Extent> = Vec::new();
+        inode_ref.ext4_find_all_extent(&mut extents);
+
+        let mut entries = Vec::<Ext4DirEntry>::new();
+
+        for e in extents{
+            let blk_no: u64 = ((e.start_lo as u64) << 32) | e.start_hi as u64;
+    
+            for i in 0..e.block_count{
+                let block = block_dev.read_offset((blk_no as usize + i as usize) * BLOCK_SIZE);
+                let mut offset = 0;
+                while offset < block.len() {
+                    let de = Ext4DirEntry::try_from(&block[offset..]).unwrap();
+                    offset = offset + de.entry_len as usize;
+                    if de.inode == 0 {
+                        continue;
+                    }
+                    entries.push(de);
+                }
+            }
+        }
+        entries
+    }
+
     #[allow(unused)]
     pub fn ext4_file_remove(&self, path: &str) -> Result<usize> {
         return_errno_with_message!(Errnum::ENOTSUP, "not support");
