@@ -298,7 +298,10 @@ impl Ext4 {
             // log::info!("find de name{:?} de inode {:x?}", name, dir_search_result.dentry.inode);
 
             if is_goal {
-                file.inode = dir_search_result.dentry.inode;
+                let current_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), dir_search_result.dentry.inode);
+                file.inode = current_inode_ref.inode_num;
+                file.fpos = 0;
+                file.fsize = current_inode_ref.inner.inode.inode_get_size();
                 return Ok(EOK);
             } else {
                 search_parent = Ext4InodeRef::get_inode_ref(
