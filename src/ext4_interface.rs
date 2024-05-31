@@ -127,8 +127,8 @@ impl Ext4 {
         let mut filetype = DirEntryType::EXT4_DE_UNKNOWN;
 
         // get mount point
-        let mut ptr = Box::new(self.mount_point.clone());
-        file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
+        // let mut ptr = Box::new(self.mount_point.clone());
+        file.mp = self.mount_point.clone();
 
         // get open flags
         iflags = self.ext4_parse_flags(flags).unwrap();
@@ -152,9 +152,9 @@ impl Ext4 {
     }
 
     pub fn ext4_file_close(&self, file: &mut Ext4File) -> Result<usize> {
-        assert!(!file.mp.is_null());
+        // assert!(!file.mp.is_null());
 
-        file.mp = core::ptr::null_mut();
+        file.mp = self.mount_point.clone();
         file.flags = 0;
         file.inode = 0;
         file.fpos = 0;
@@ -164,6 +164,7 @@ impl Ext4 {
     }
     #[allow(unused)]
     pub fn ext4_dir_mk(&self, path: &str) -> Result<usize> {
+        log::trace!("ext4_dir_mk {:?}", path);
         let mut file = Ext4File::new();
         let flags = "w";
 
@@ -171,8 +172,8 @@ impl Ext4 {
         let filetype = DirEntryType::EXT4_DE_DIR;
 
         // get mount point
-        let mut ptr = Box::new(self.mount_point.clone());
-        file.mp = Box::as_mut(&mut ptr) as *mut Ext4MountPoint;
+        // let mut ptr = Box::new(self.mount_point.clone());
+        file.mp = self.mount_point.clone();
 
         // get open flags
         iflags = self.ext4_parse_flags(flags).unwrap();
@@ -190,6 +191,8 @@ impl Ext4 {
             filetype.bits(),
             &mut root_inode_ref,
         );
+
+        log::info!("dir mk done");
         r
     }
 

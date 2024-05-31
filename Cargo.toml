@@ -10,5 +10,4 @@ repository = "https://github.com/yuoo655/ext4_rs"
 
 [dependencies]
 bitflags = "2.2.1"
-byteorder = "1.5.0"
 log = "0.4"

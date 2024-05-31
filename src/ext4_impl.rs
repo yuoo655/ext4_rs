@@ -21,6 +21,7 @@ use crate::Ext4;
 impl Ext4 {
     
     pub fn ext4_ialloc_alloc_inode(&self, index: &mut u32, is_dir: bool) {
+        log::trace!("ext4_ialloc_alloc_inode");
         let mut bgid = self.last_inode_bg_id;
         let bg_count = self.super_block.block_groups_count();
 
@@ -52,10 +53,11 @@ impl Ext4 {
 
                 let bitmap_size: u32 = inodes_in_bg / 0x8;
 
-                let mut bitmap_data = &mut raw_data[..bitmap_size as usize];
+                let mut bitmap_data = &mut raw_data[..];
 
                 let mut idx_in_bg = 0 as u32;
 
+                // log::info!("bitmap {:x?}", bitmap_data);
                 ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);
                 ext4_bmap_bit_set(&mut bitmap_data, idx_in_bg);
 

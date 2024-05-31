@@ -181,6 +181,10 @@ impl Ext4Superblock {
             / self.blocks_per_group
     }
 
+    pub fn blocks_count(&self) -> u32 {
+        ((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo
+    }
+
     pub fn desc_size(&self) -> u16 {
         let size = self.desc_size;
 
@@ -199,7 +203,7 @@ impl Ext4Superblock {
         let block_group_count = self.block_groups_count();
         let inodes_per_group = self.inodes_per_group;
 
-        let total_inodes = ((self.inodes_count as u64) << 32) as u32;
+        let total_inodes = self.inodes_count;
         if bgid < block_group_count - 1 {
             inodes_per_group
         } else {

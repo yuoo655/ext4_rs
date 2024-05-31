@@ -573,6 +573,8 @@ impl Ext4InodeRef {
 
     #[allow(unused)]
     pub fn balloc_alloc_block(&mut self, goal: Ext4Fsblk) -> u64 {
+
+        log::trace!("balloc_alloc_block");
         // let mut fblock = 0;
 
         let fs = self.fs();
@@ -589,12 +591,13 @@ impl Ext4InodeRef {
         let idx_in_bg = goal % blocks_per_group as u64;
 
         let mut bg =
-            Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
-
+        Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
+        
         let block_bitmap_block = bg.get_block_bitmap_block(&super_block);
         let mut raw_data = block_device.read_offset(block_bitmap_block as usize * BLOCK_SIZE);
         let mut data: &mut Vec<u8> = &mut raw_data;
         let mut rel_blk_idx = 0 as u32;
+        // let blk_in_bg = bg.ext4_blocks_in_group_cnt(&super_block);
 
         ext4_bmap_bit_find_clr(data, idx_in_bg as u32, 0x8000, &mut rel_blk_idx);
         // fblock = rel_blk_idx as u64;

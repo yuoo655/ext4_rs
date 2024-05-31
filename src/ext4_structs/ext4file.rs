@@ -22,7 +22,7 @@ pub enum SeekFrom {
 /// 文件描述符
 pub struct Ext4File {
     /// 挂载点句柄
-    pub mp: *mut Ext4MountPoint,
+    pub mp: Ext4MountPoint,
     /// 文件 inode id
     pub inode: u32,
     /// 打开标志
@@ -36,7 +36,7 @@ pub struct Ext4File {
 impl Ext4File {
     pub fn new() -> Self {
         Self {
-            mp: core::ptr::null_mut(),
+            mp: Ext4MountPoint::new("/"),
             inode: 0,
             flags: 0,
             fsize: 0,
