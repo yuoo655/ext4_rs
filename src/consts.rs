@@ -160,3 +160,32 @@ bitflags! {
         const S_IFIFO = 0x1000;
     }
 }
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub struct FileMode: u16 {
+        const S_IFMT   = 0xF000; // 文件类型的位域
+        const S_IFSOCK = 0xC000; // 套接字
+        const S_IFLNK  = 0xA000; // 符号链接
+        const S_IFREG  = 0x8000; // 普通文件
+        const S_IFBLK  = 0x6000; // 块设备
+        const S_IFDIR  = 0x4000; // 目录
+        const S_IFCHR  = 0x2000; // 字符设备
+        const S_IFIFO  = 0x1000; // FIFO
+        const S_ISUID  = 0x0800; // 设置用户ID位
+        const S_ISGID  = 0x0400; // 设置组ID位
+        const S_ISVTX  = 0x0200; // 粘滞位
+        const S_IRWXU  = 0x01E0; // 用户权限的位域
+        const S_IRUSR  = 0x0100; // 用户可读
+        const S_IWUSR  = 0x0080; // 用户可写
+        const S_IXUSR  = 0x0040; // 用户可执行
+        const S_IRWXG  = 0x001C; // 组权限的位域
+        const S_IRGRP  = 0x0010; // 组可读
+        const S_IWGRP  = 0x0008; // 组可写
+        const S_IXGRP  = 0x0004; // 组可执行
+        const S_IRWXO  = 0x0007; // 其他用户权限的位域
+        const S_IROTH  = 0x0004; // 其他用户可读
+        const S_IWOTH  = 0x0002; // 其他用户可写
+        const S_IXOTH  = 0x0001; // 其他用户可执行
+    }
+}

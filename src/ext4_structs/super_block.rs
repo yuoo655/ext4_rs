@@ -33,7 +33,7 @@ pub struct Ext4Superblock {
     last_check_time: u32,          // 最后检查时间
     check_interval: u32,           // 检查间隔
     pub creator_os: u32,           // 创建者操作系统
-    rev_level: u32,                // 版本号
+    pub rev_level: u32,                // 版本号
     def_resuid: u16,               // 保留块的默认uid
     def_resgid: u16,               // 保留块的默认gid
 
@@ -177,8 +177,13 @@ impl Ext4Superblock {
 
     /// Returns the number of block groups.
     pub fn block_groups_count(&self) -> u32 {
-        (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
-            / self.blocks_per_group
+        let cnt = (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
+            / self.blocks_per_group;
+        if cnt == 0 {
+            1
+        } else {
+            cnt
+        } 
     }
 
     pub fn blocks_count(&self) -> u32 {

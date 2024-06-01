@@ -51,7 +51,7 @@ impl Ext4 {
 
                 let inodes_in_bg = super_block.get_inodes_in_group_cnt(bgid);
 
-                let bitmap_size: u32 = inodes_in_bg / 0x8;
+                // let bitmap_size: u32 = inodes_in_bg / 0x8;
 
                 let mut bitmap_data = &mut raw_data[..];
 
@@ -222,7 +222,7 @@ impl Ext4 {
         parent.append_inode_dblk(&mut (iblock as u32), &mut fblock);
 
         /* Load new block */
-        let block_device = parent.fs().block_device.clone();
+        let block_device = self.block_device.clone();
         let mut data = block_device.read_offset(fblock as usize * BLOCK_SIZE);
         let mut ext4_block = Ext4Block {
             logical_block_id: iblock,
@@ -311,7 +311,7 @@ impl Ext4 {
                     parent.ext4_dir_set_csum(dst_blk);
                     
                     // sync to disk
-                    let block_device = parent.fs().block_device.clone();
+                    let block_device = self.block_device.clone();
                     dst_blk.sync_blk_to_disk(block_device.clone());
 
                     return EOK;

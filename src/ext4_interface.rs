@@ -21,7 +21,7 @@ pub trait Jbd2: Send + Sync + Any + Debug {
     fn recover(&mut self);
 }
 
-pub trait BlockDevice: Send + Sync + Any + Debug {
+pub trait BlockDevice: Send + Sync + Any{
     fn read_offset(&self, offset: usize) -> Vec<u8>;
     fn write_offset(&self, offset: usize, data: &[u8]);
 }
@@ -32,7 +32,6 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
 //     }
 // }
 
-#[derive(Debug)]
 pub struct Ext4 {
     pub block_device: Arc<dyn BlockDevice>,
     pub super_block: Ext4Superblock,
@@ -225,7 +224,14 @@ impl Ext4 {
 
         // load root inode
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
-
+        
+        if path == ""{
+            // open root directory
+            file.inode = 2;
+            file.fpos = 0;
+            file.fsize = root_inode_ref.inner.inode.inode_get_size();
+            return Ok(EOK);
+        }
         // if !parent_inode.is_none() {
         //     parent_inode.unwrap().inode_num = root_inode_ref.inode_num;
         // }
@@ -302,6 +308,9 @@ impl Ext4 {
                 file.inode = dir_search_result.dentry.inode;
                 file.fpos = 0;
                 file.fsize = current_inode_ref.inner.inode.inode_get_size();
+
+                log::error!("size {:x?}", file.fsize);
+                // log::error!("inode_num {:x?} size_lo {:x?}  size_hi {:x?}", file.inode, current_inode_ref.inner.inode.size, current_inode_ref.inner.inode.size_hi);
                 return Ok(EOK);
             } else {
                 search_parent = Ext4InodeRef::get_inode_ref(
@@ -521,7 +530,7 @@ impl Ext4 {
     ) -> Result<usize> {
 
         if ext4_file.fpos > ext4_file.fsize as usize {
-            log::error!("read offset exceeds file size");
+            log::error!("read offset exceeds file size  fpos {:x?}  fsize {:x?}", ext4_file.fpos, ext4_file.fsize);
             return_errno_with_message!(Errnum::EINVAL, "read offset exceeds file size")
         }
 
