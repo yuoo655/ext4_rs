@@ -176,11 +176,11 @@ impl Ext4Extent {
     }
 
     pub fn pblock(&self) -> u32 {
-        (self.start_lo as u32) | ((self.start_hi as u32) << 31) << 1
+        ((self.start_lo as u64) | (self.start_hi as u64) << 32) as u32
     }
 
     pub fn can_append(&self, next: &Self) -> bool {
-        self.pblock() + self.get_actual_len() as u32 == next.first_block
+        self.first_block + self.get_actual_len() as u32 == next.first_block
             && if self.is_unwritten() {
                 self.get_actual_len() + next.get_actual_len() <= EXT_UNWRITTEN_MAX_LEN
             } else {
@@ -189,7 +189,7 @@ impl Ext4Extent {
     }
 
     pub fn can_prepend(&self, prev: &Self) -> bool {
-        prev.pblock() + prev.get_actual_len() as u32 == self.first_block
+        prev.first_block + prev.get_actual_len() as u32 == self.first_block
             && if self.is_unwritten() {
                 self.get_actual_len() + prev.get_actual_len() <= EXT_UNWRITTEN_MAX_LEN
             } else {

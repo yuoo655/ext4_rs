@@ -191,7 +191,7 @@ impl Ext4 {
             &mut root_inode_ref,
         );
 
-        log::info!("dir mk done");
+        // log::info!("dir mk done");
         r
     }
 
