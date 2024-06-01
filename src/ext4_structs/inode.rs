@@ -1,3 +1,6 @@
+use byteorder::NetworkEndian;
+use log::error;
+
 use super::*;
 use crate::consts::*;
 use crate::prelude::*;
@@ -7,7 +10,11 @@ use crate::utils::*;
 use crate::BlockDevice;
 use crate::Ext4;
 use crate::BLOCK_SIZE;
+use crate::EOK;
+use core::iter::Empty;
 use core::mem::size_of;
+use core::ops::Add;
+use core::sync::atomic::fence;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +46,46 @@ pub struct Ext4Inode {
     pub i_crtime: u32,       // 文件创建时间
     pub i_crtime_extra: u32, // 额外的文件创建时间（nsec << 2 | epoch）
     pub i_version_hi: u32,   // 64位版本的高32位
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Ext4InodeFlag {
+    SecureDeletion = 0,
+    Undelete,
+    CompressFile,
+    SynchronousUpdates,
+    ImmutableFile,
+    AppendOnly,
+    NoDump,
+    NoAtime,
+    Dirty,
+    CompressedBlock,
+    NoCompress,
+    Encrypted,
+    IndexDirectory,
+    Imagic,
+    JournalData,
+    NoTail,
+    DirSync,
+    TopDirectory,
+    HugeFile,
+    Extents,
+    VerityProtected,
+    EaInode,
+    Dax = 25,
+    InlineData = 28,
+    ProjInherit,
+    CaseFold,
+    Reserved = 31,
+}
+
+
+impl Ext4Inode {
+    pub fn test_flag(&self, flag: Ext4InodeFlag) -> bool {
+        (self.flags & (1 << (flag as u32))) != 0
+    }
+
+
 }
 
 #[repr(C)]
@@ -86,6 +133,10 @@ impl Ext4Inode {
         self.mode |= mode;
     }
 
+    pub fn ext4_inode_get_links_cnt(&mut self) -> u16 {
+        self.links_count
+    }
+
     pub fn ext4_inode_set_links_cnt(&mut self, cnt: u16) {
         self.links_count = cnt;
     }
@@ -96,6 +147,10 @@ impl Ext4Inode {
 
     pub fn ext4_inode_set_gid(&mut self, gid: u16) {
         self.gid = gid;
+    }
+
+    pub fn ext4_inode_get_size(&self) -> u64 {
+        self.size as u64 | ((self.size_hi as u64) << 32)
     }
 
     pub fn ext4_inode_set_size(&mut self, size: u64) {
@@ -185,6 +240,15 @@ impl Ext4Inode {
             blocks |= (self.osd2.l_i_blocks_high as u64) << 32;
         }
         blocks
+    }
+
+    pub fn ext4_inode_get_flags(&self)-> u32{
+        self.flags
+    }
+
+    pub fn ext4_inode_has_flag(&self, flag: u32) -> bool{
+
+        self.ext4_get_inode_flags() & flag != 0
     }
 
     // pub fn ext4_inode_set_blocks_count(&mut self, inode_blocks: u64){
@@ -428,7 +492,7 @@ impl Ext4Inode {
     }
 
     /// Get the depth of the extent tree from an inode.
-    pub unsafe fn extent_depth(&self) -> u16 {
+    pub unsafe fn header_depth(&self) -> u16 {
         (*self.extent_header()).depth
     }
 }
@@ -446,7 +510,7 @@ impl Ext4InodeRef {
         let mut eh: &Ext4ExtentHeader;
         let mut buf_block: Ext4Fsblk = 0;
         let mut path = orig_path.take(); // Take the path out of the Option, which may replace it with None
-        let depth = unsafe { self.inner.inode.extent_depth() };
+        let depth = unsafe { self.inner.inode.header_depth() };
 
         let mut ppos = 0;
         let mut i: u16;
@@ -469,7 +533,7 @@ impl Ext4InodeRef {
 
         i = depth;
         while i > 0 {
-            path[ppos].binsearch_extentidx(block_id);
+            path[ppos].binsearch_extentidx(block_id as u32);
             // ext4_ext_binsearch_idx(&mut path[ppos], block);
             path[ppos].p_block = unsafe { *path[ppos].index }.pblock();
             path[ppos].depth = i;
@@ -484,7 +548,7 @@ impl Ext4InodeRef {
         path[ppos].extent = core::ptr::null_mut();
         path[ppos].index = core::ptr::null_mut();
 
-        path[ppos].search_extent(block_id);
+        path[ppos].search_extent(block_id as u32);
         if !path[ppos].extent.is_null() {
             path[ppos].p_block = unsafe { (*path[ppos].extent).pblock() } as u64;
         }
@@ -520,7 +584,7 @@ impl Ext4InodeRef {
             .as_mut()
             .expect("Path should not be None after successful find_extent");
 
-        let depth = unsafe { self.inner.inode.extent_depth() } as usize;
+        let depth = unsafe { self.inner.inode.header_depth() } as usize;
         // Safely access the desired depth element if it exists
         if let Some(extent_path) = path.get(depth) {
             if let Some(ex) = unsafe { extent_path.extent.as_ref() } {
@@ -529,24 +593,24 @@ impl Ext4InodeRef {
                 let ee_start = ex.pblock();
                 let ee_len = ex.get_actual_len();
 
-                if iblock >= ee_block && iblock < ee_block + ee_len as u32 {
-                    let allocated = ee_len - (iblock - ee_block) as u16;
+                if iblock >= ee_block as u64 && iblock < ee_block as u64 + ee_len as u64{
+                    let allocated = ee_len - (iblock - ee_block as u64) as u16;
                     *blocks_count = allocated as u32;
 
                     if !create || ex.is_unwritten() {
-                        *result = (iblock - ee_block + ee_start) as u64;
+                        *result = (iblock - ee_block as u64 + ee_start as u64) as u64;
                         return; // Early return if no new extent needed
                     }
                 }
             }
         }
         if create {
-            let mut allocated: u32 = 0;
+            let mut allocated = 0;
             let next = EXT_MAX_BLOCKS;
 
-            allocated = next - iblock;
-            if allocated > max_blocks {
-                allocated = max_blocks;
+            allocated = next as u64  - iblock as u64;
+            if allocated > max_blocks as u64{
+                allocated = max_blocks as u64;
             }
 
             let mut newex: Ext4Extent = Ext4Extent::default();
@@ -559,7 +623,7 @@ impl Ext4InodeRef {
             *result = alloc_block;
 
             // 创建并插入新的extent
-            newex.first_block = iblock;
+            newex.first_block = iblock as u32;
             newex.start_lo = alloc_block as u32 & 0xffffffff;
             newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
             newex.block_count = allocated as u16;
@@ -573,8 +637,6 @@ impl Ext4InodeRef {
 
     #[allow(unused)]
     pub fn balloc_alloc_block(&mut self, goal: Ext4Fsblk) -> u64 {
-
-        log::trace!("balloc_alloc_block");
         // let mut fblock = 0;
 
         let fs = self.fs();
@@ -591,13 +653,12 @@ impl Ext4InodeRef {
         let idx_in_bg = goal % blocks_per_group as u64;
 
         let mut bg =
-        Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
-        
+            Ext4BlockGroup::load(block_device.clone(), &super_block, bgid as usize).unwrap();
+
         let block_bitmap_block = bg.get_block_bitmap_block(&super_block);
         let mut raw_data = block_device.read_offset(block_bitmap_block as usize * BLOCK_SIZE);
         let mut data: &mut Vec<u8> = &mut raw_data;
         let mut rel_blk_idx = 0 as u32;
-        // let blk_in_bg = bg.ext4_blocks_in_group_cnt(&super_block);
 
         ext4_bmap_bit_find_clr(data, idx_in_bg as u32, 0x8000, &mut rel_blk_idx);
         // fblock = rel_blk_idx as u64;
@@ -610,7 +671,7 @@ impl Ext4InodeRef {
         let mut super_blk_free_blocks = super_block.free_blocks_count();
         super_blk_free_blocks -= 1;
         super_block.set_free_blocks_count(super_blk_free_blocks);
-        super_block.sync_to_disk_with_csum(block_device.clone());
+        super_block.sync_to_disk(block_device.clone());
 
         /* Update inode blocks (different block size!) count */
         let mut inode_blocks = self.inner.inode.ext4_inode_get_blocks_count();
@@ -631,13 +692,26 @@ impl Ext4InodeRef {
 
     /// Inserts a new extent into the inode's data structure.
     pub fn insert_extent(&mut self, path: &mut Ext4ExtentPath, newext: &Ext4Extent, flags: i32) {
-        let depth = unsafe { self.inner.inode.extent_depth() };
+        let depth: u16 = unsafe { self.inner.inode.header_depth() };
         let mut need_split = false;
 
         self.insert_leaf(path, depth, newext, flags, &mut need_split);
 
+
+        error!("inode block {:x?}", self.inner.inode.block);
         self.write_back_inode_without_csum();
     }
+
+
+    // pub fn insert_extent_new(&mut self, path: &mut Ext4ExtentPath_new, newext: &Ext4Extent, flags: i32) {
+    //     let depth: u16 = unsafe { self.inner.inode.header_depth() };
+    //     let mut need_split = false;
+
+    //     self.insert_leaf(path, depth, newext, flags, &mut need_split);
+
+    //     self.write_back_inode_without_csum();
+    // }
+
 
     #[allow(unused)]
     /// Handles the leaf insertion logic for extents, considering append and prepend scenarios.
@@ -759,7 +833,7 @@ impl Ext4InodeRef {
         let inode_size = self.inner.inode.inode_get_size();
         let block_size = BLOCK_SIZE as u64;
 
-        *iblock = ((inode_size + block_size - 1) / block_size) as u32;
+        *iblock = ((inode_size + block_size - 1) / block_size) as u64;
 
         let current_block: Ext4Fsblk;
         let mut current_fsblk: Ext4Fsblk = 0;
@@ -957,8 +1031,8 @@ impl Ext4InodeRef {
             let ee_block = last.first_block as u32;
             let ee_len = last.block_count as u32;
 
-            if iblock >= ee_block && iblock < ee_block + ee_len as u32 {
-                let allocated = ee_len - (iblock - ee_block) as u32;
+            if iblock >= ee_block as u64 && iblock < ee_block as u64 + ee_len as u64 {
+                let allocated = ee_len - (iblock - ee_block as u64) as u32;
                 *blocks_count = allocated as u32;
             }
 
@@ -969,7 +1043,7 @@ impl Ext4InodeRef {
                 start_lo: last.start_lo,
             };
             if !create || ex.is_unwritten() {
-                *result = (iblock - ee_block + ee_start) as u64;
+                *result = (iblock - ee_block as u64 + ee_start as u64) as u64;
                 return; // Early return if no new extent needed
             }
         }
@@ -977,7 +1051,7 @@ impl Ext4InodeRef {
             let mut allocated: u32 = 0;
             let next = EXT_MAX_BLOCKS;
 
-            allocated = next - iblock;
+            allocated = (next as u64 - iblock as u64) as u32;
             if allocated > max_blocks {
                 allocated = max_blocks;
             }
@@ -992,7 +1066,7 @@ impl Ext4InodeRef {
             *result = alloc_block;
 
             // 创建并插入新的extent
-            newex.first_block = iblock;
+            newex.first_block = iblock as u32;
             newex.start_lo = alloc_block as u32 & 0xffffffff;
             newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
             newex.block_count = allocated as u16;
@@ -1000,19 +1074,695 @@ impl Ext4InodeRef {
     }
 }
 
+impl Ext4InodeRef {
+    pub fn truncate_inode(&mut self, new_size: u64) -> Result<usize> {
+        info!("truncate_inode {:x?}", new_size);
+        let new_size = new_size as usize;
 
-impl Ext4InodeRef{
-    pub fn ext4_dir_set_csum(&self,  dst_blk: &mut Ext4Block) {
+        let old_size = self.inner.inode.ext4_inode_get_size() as usize;
+
+        if old_size == new_size {
+            return Ok(EOK);
+        }
+
+        let block_size = BLOCK_SIZE;
+        let new_blocks_cnt = ((new_size + block_size - 1) / block_size) as u32;
+        let old_blocks_cnt = ((old_size + block_size - 1) / block_size) as u32;
+        let diff_blocks_cnt = old_blocks_cnt - new_blocks_cnt;
+
+        info!("new_size {:x} old_size {:x?}", new_size, old_size);
+        info!(
+            "new_blocks_cnt {:x} old_blocks_cnt {:x?}",
+            new_blocks_cnt, old_blocks_cnt
+        );
+
+        if diff_blocks_cnt > 0 {
+
+            let r = self.extent_remove_space(new_blocks_cnt, EXT_MAX_BLOCKS as u32);
+        }
+
+        self.inner.inode.ext4_inode_set_size(new_size as u64);
+        self.write_back_inode();
+
+        // return_errno_with_message!(Errnum::ENOTSUP, "not support");
+        return Ok(EOK);
+    }
+
+    pub fn extent_remove_space(&mut self, from: u32, to: u32) -> Result<usize> {
+        warn!("extent_remove_space from = {:x?}, to = {:x?}", from, to);
+        let depth = unsafe { self.inner.inode.header_depth() } as usize;
+
+        debug!("depth {:x?}", depth);
+        let mut path: Option<Vec<Ext4ExtentPath>> = None;
+        let err = self.find_extent(from.into(), &mut path, 0);
+
+        if err != EOK {
+            return_errno_with_message!(
+                Errnum::ENOTSUP,
+                "extent_remove_space ext4_find_extent fail"
+            );
+        }
+
+        let path = path
+            .as_mut()
+            .expect("Path should not be None after successful find_extent");
+        let mut extent = unsafe { *path[depth].extent };
+
+        let in_range = (from..=to).contains(&(extent.first_block.into()));
+
+        if !in_range {
+            return Ok(EOK);
+        }
+
+        // remove_space inside the range of this extent
+        if (extent.first_block < from)
+            && (to < (extent.first_block + extent.block_count as u32 - 1))
+        {
+            info!("remove_space inside the range of this extent");
+            let mut newex: Ext4Extent = Ext4Extent::default();
+            let unwritten = extent.is_unwritten();
+            let ee_block = extent.first_block;
+            let block_count = extent.block_count;
+
+            let newblock = to + 1 - ee_block + extent.pblock();
+
+            extent.block_count = from as u16 - ee_block as u16;
+
+            if unwritten {
+                extent.mark_unwritten();
+            }
+
+            newex.first_block = to + 1;
+            newex.block_count = (ee_block + block_count as u32 - 1 - to) as u16;
+            newex.start_lo = newblock as u32 & 0xffffffff;
+            newex.start_hi = (((newblock as u32) << 31) << 1) as u16;
+
+            self.insert_extent(&mut path[0], &newex, 0);
+        }
+
+        info!("remove_space outside the range of this extent");
+
+        if depth == 0 {
+            let mut header = Ext4ExtentHeader::try_from(&self.inner.inode.block[..]).unwrap();
+            warn!("header {:x?}", header);
+            unsafe {
+                let first_ex = Ext4Extent::try_from(&self.inner.inode.block[3..]).unwrap();
+                let entry_count = header.entries_count as usize;
+                let idx = entry_count * 3 as usize;
+                let last_ex = Ext4Extent::try_from(&self.inner.inode.block[idx..]).unwrap();
+
+                info!("first_ex {:x?}", first_ex);
+                info!("last_ex {:x?}", last_ex);
+
+                let mut leaf_from = first_ex.first_block;
+                let mut leaf_to = last_ex.first_block + last_ex.get_actual_len() as u32 - 1;
+
+                info!("from {:x?} to {:x?}", from, to);
+                info!("leaf_from {:x?} leaf_to {:x?}", leaf_from, leaf_to);
+                if leaf_from < from {
+                    leaf_from = from;
+                }
+                if leaf_to > to {
+                    leaf_to = to;
+                }
+
+                debug!(" remove leaf from {:x} to {:x}", leaf_from, leaf_to);
+                let r = self.ext_remove_leaf(path, leaf_from, leaf_to);
+            }
+
+            // let node =  ExtentTreeNode::load_from_header(&self.inner.inode.block[..]);
+        }
+
+
+
+
+        let header = Ext4ExtentHeader::try_from(&self.inner.inode.block[..]).unwrap();
+        
+        if header.entries_count == 0 {
+            let mut header = Ext4ExtentHeader::try_from_u32(&mut self.inner.inode.block[..]);
+            self.inner.inode.block[3..].fill(0);
+            self.write_back_inode();
+        }
+        Ok(EOK)
+    }
+
+
+
+
+
+    // from 20 to 29
+
+    // 初始状态:
+    // +------------------+------------------+------------------+
+    // | extent 0 (10-14)   | extent 1 (20-29)   | extent 2 (35-42)   |
+    // +------------------+------------------+------------------+
+    
+    // extent 0 (10-14): (不在范围)
+    // +------------------+------------------+------------------+
+    // | extent 0 (10-14)   | extent 1 (20-29)   | extent 2 (35-42)   |
+    // +------------------+------------------+------------------+
+    
+    // 处理extent 1 (20-29):（在范围, 删除）
+    // +------------------+------------------+------------------+
+    // | extent 0 (10-14)   | 删除 (空)        | extent 2 (35-42)   |
+    // +------------------+------------------+------------------+
+    
+    // 移动剩余extent:
+    // +------------------+------------------+------------------+
+    // | extent 0 (10-14)   | extent 2 (35-42)   | (空)             |
+    // +------------------+------------------+------------------+
+
+    // 最终结果:
+    // +------------------+------------------+------------------+
+    // | extent 0 (10-14)   | extent 1 (35-42)   | (空)             |
+    // +------------------+------------------+------------------+
+
+    pub fn ext_remove_leaf(
+        &mut self,
+        path: &mut Vec<Ext4ExtentPath>,
+        from: u32,
+        to: u32,
+    ) -> Result<usize> {
+        debug!("ext_remove_leaf from {:x?} to {:x?}", from, to);
+        let depth = unsafe { self.inner.inode.header_depth() } as usize;
+
+        let mut header = unsafe { *path[depth].header };
+
+        let mut first = Ext4Extent::try_from(&self.inner.inode.block[3..]).unwrap();
+
+        let mut first_ex = &mut first as *mut Ext4Extent;
+
+        // (first as *mut Ext4Extent as *mut u8) as *mut Ext4Extent
+
+        let mut new_entry_count = header.entries_count;
+
+        let mut entry_count = header.entries_count;
+        let mut start_ex = 0;
+
+        let mut ex2: Ext4Extent = Ext4Extent::default();
+
+        for i in 0..entry_count as usize {
+            let idx = 3 + i * 3;
+            let mut ex = Ext4Extent::try_from(&self.inner.inode.block[idx..]).unwrap();
+            debug!("remove leaf ex = {:x?}", ex);
+
+            if ex.first_block > to {
+                break;
+            }
+
+            let mut new_len = 0;
+            let mut start = ex.first_block;
+            let mut new_start = ex.first_block;
+
+            let mut len = ex.get_actual_len();
+            let mut newblock = ex.pblock();
+
+            if start < from {
+                len -= from as u16 - start as u16;
+                new_len = from - start;
+                start = from;
+            } else {
+
+                if start + len as u32 - 1 > to {
+                    new_len = start + len as u32 - 1 - to;
+                    len -= new_len as u16;
+
+                    new_start = to + 1;
+                    
+                    newblock += to + 1 - start;
+
+                    ex2 = ex;
+                }
+            }
+
+            error!("newblock {:x?} new_start {:x?}", newblock, new_start);
+            self.ext_remove_blocks(&mut ex, start, start + len as u32 - 1);
+
+            ex.first_block = new_start;
+
+
+            error!("new_len {:x?}", new_len);
+            if new_len == 0 {
+                new_entry_count -= 1;
+            } else {
+                let unwritten = ex.is_unwritten();
+                ex.store_pblock(newblock as u64);
+                ex.block_count = new_len as u16;
+
+                if unwritten {
+                    ex.mark_unwritten();
+                }
+            }
+
+            error!("ex {:x?}", ex);
+        }
+
+        // Move any remaining extents to the starting position of the node.
+        if ex2.first_block > 0 {
+            let start_index = 3 + start_ex * 3;
+            let end_index = 3 + entry_count as usize * 3;
+            let remaining_extents: Vec<u32> = self.inner.inode.block[start_index..end_index].to_vec();
+            self.inner.inode.block[3..3 + remaining_extents.len()].copy_from_slice(&remaining_extents);
+        }
+
+
+        // Update the entries count in the header
+        header.entries_count = new_entry_count;
+        
+        // Fix the indexes if the extent pointer is at the first extent
+        if start_ex == 0 && new_entry_count > 0 {
+            self.ext_correct_indexes(path)?;
+        }
+
+
+        /* if this leaf is free, then we should
+	    * remove it from index block above */
+
+        // fixme leaf is root should not be removed
+        if new_entry_count == 0 {
+            let mut header = Ext4ExtentHeader::try_from_u32(&mut self.inner.inode.block[..]);
+            header.entries_count = 0;
+            unsafe {
+                let header_ptr = &header as *const Ext4ExtentHeader as *const u32;
+                let array_ptr = &mut self.inner.inode.block as *mut [u32; 15] as *mut u32;
+                core::ptr::copy_nonoverlapping(header_ptr, array_ptr, 3);
+            }
+        }
+
+        Ok(EOK)
+    }
+
+
+    fn ext_correct_indexes(&mut self, path: &mut Vec<Ext4ExtentPath>) -> Result<usize> {
+        let depth = unsafe { self.inner.inode.header_depth() } as usize;
+
+        let mut ex = path[depth].extent;
+        let mut header = path[depth].header;
+        
+        if ex.is_null() || header.is_null() {
+            return_errno_with_message!(Errnum::EIO, "no header");
+        }
+        
+        let mut header = unsafe { *path[depth].header };
+
+
+        if depth == 0 {
+            // there is no tree at all
+            return Ok(EOK);
+        }
+
+        if ex != unsafe{(*path[depth].header).first_extent_mut()} {
+            // we correct tree if first leaf got modified only
+            return Ok(EOK);
+        }
+
+        let mut k = depth - 1;
+        let border = unsafe{*ex}.first_block;
+        unsafe{*path[k].index}.first_block = border;
+
+
+        while k > 0 {
+            // change all left-side indexes
+            if path[k + 1].index != unsafe{(*path[k + 1].header).first_extent_index_mut()} {
+                break;
+            }
+            unsafe{*path[k].index}.first_block = border;
+            k -= 1;
+        }
+
+        Ok(EOK)
+    }
+
+    fn ext_remove_idx(&mut self, path: &mut Vec<Ext4ExtentPath>, depth: i32) -> Result<usize> {
+
+        Ok(EOK)
+    }
+
+
+    pub fn ext_remove_blocks(&mut self, ex: &mut Ext4Extent, from: u32, to: u32) {
+        info!("remove_blocks from {:x?} to {:x?}", from, to);
+        let len = to - from + 1;
+
+        let num = from - ex.first_block;
+
+        let start = ex.pblock() + num;
+
+        self.balloc_free_blocks(start as _, len);
+    }
+
+    #[allow(unused)]
+    pub fn balloc_free_blocks(&mut self, start: Ext4Fsblk, count: u32) {
+        let mut count = count as usize;
+        let mut start = start;
+
+        info!("free_blocks {:x?} ", count);
+
+        let fs = self.fs();
+
+        let block_device = fs.block_device.clone();
+
+        let super_block_data = block_device.read_offset(crate::BASE_OFFSET);
+        let mut super_block = Ext4Superblock::try_from(super_block_data).unwrap();
+
+        // let inodes_per_group = super_block.inodes_per_group();
+        let blocks_per_group = super_block.blocks_per_group();
+
+        let bgid = start / blocks_per_group as u64;
+
+        let mut bg_first = start / blocks_per_group as u64;
+        let mut bg_last = (start + count as u64 - 1) / blocks_per_group as u64;
+
+        // return;
+
+        while bg_first <= bg_last {
+            info!("bg_first {:x?}  bg_last {:x?}", bg_first, bg_last);
+            let idx_in_bg = start % blocks_per_group as u64;
+
+            let mut bg =
+                Ext4BlockGroup::load(block_device.clone(), &super_block, bg_first as usize)
+                    .unwrap();
+
+            let block_bitmap_block = bg.get_block_bitmap_block(&super_block);
+            let mut raw_data = block_device.read_offset(block_bitmap_block as usize * BLOCK_SIZE);
+            let mut data: &mut Vec<u8> = &mut raw_data;
+
+            let mut free_cnt = BLOCK_SIZE * 8 - idx_in_bg as usize;
+
+            if count as usize > free_cnt {
+            } else {
+                free_cnt = count as usize;
+            }
+
+            debug!("free_cnt {:x?}", free_cnt);
+            ext4_bmap_bits_free(&mut data, idx_in_bg as u32, free_cnt as u32);
+
+
+
+
+            count -= free_cnt;
+            start += free_cnt as u64;
+
+            bg.set_block_group_balloc_bitmap_csum(&super_block, &data);
+            block_device.write_offset(block_bitmap_block as usize * BLOCK_SIZE, &data);
+
+            /* Update superblock free blocks count */
+            let mut super_blk_free_blocks = super_block.free_blocks_count();
+
+            info!("super_blk_free_blocks {:x?}", super_blk_free_blocks);
+
+            trace!("before free sb free blocks {:x?}", super_block.free_blocks_count());
+            // fixme
+            super_blk_free_blocks += free_cnt as u64;
+            super_block.set_free_blocks_count(super_blk_free_blocks);
+            super_block.sync_to_disk(block_device.clone());
+
+            let super_block_data = block_device.read_offset(crate::BASE_OFFSET);
+            let mut super_block = Ext4Superblock::try_from(super_block_data).unwrap();
+            trace!("after free sb free block {:x?}", super_block.free_blocks_count());
+
+
+
+
+
+
+
+
+            /* Update inode blocks (different block size!) count */
+            let mut inode_blocks = self.inner.inode.ext4_inode_get_blocks_count();
+
+            trace!("before free - inode blocks: {:x?}", inode_blocks);
+            inode_blocks -= (free_cnt as usize * (BLOCK_SIZE / EXT4_INODE_BLOCK_SIZE))  as u64;
+            self.inner
+                .inode
+                .ext4_inode_set_blocks_count(inode_blocks as u32);
+            self.write_back_inode();
+
+            trace!("after free - inode_blocks: {:x?}", inode_blocks);
+
+            /* Update block group free blocks count */
+            let mut fb_cnt = bg.get_free_blocks_count();
+            fb_cnt += free_cnt as u64;
+            bg.set_free_blocks_count(fb_cnt as u32);
+            bg.sync_to_disk_with_csum(block_device.clone(), bgid as usize, &super_block);
+
+            bg_first += 1;
+        }
+    }
+
+    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data: &[u8]) -> u32 {
+        let ino_index = self.inode_num;
+        let ino_gen = 0 as u32;
+
+        let mut csum = 0;
+
+        let uuid = s.uuid;
+
+        csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
+        csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
+        let mut data = [0u8; 0xff4];
+        unsafe {
+            core::ptr::copy_nonoverlapping(blk_data.as_ptr(), data.as_mut_ptr(), blk_data.len());
+        }
+        csum = ext4_crc32c(csum, &data[..], 0xff4);
+        csum
+    }
+
+    pub fn ext4_dir_set_csum(&self, dst_blk: &mut Ext4Block) {
+        // let fs = self.fs();
+
         let parent_de = Ext4DirEntry::try_from(&dst_blk.block_data[..]).unwrap();
         let mut tail = Ext4DirEntryTail::from(&mut dst_blk.block_data, BLOCK_SIZE).unwrap();
 
-        tail.ext4_dir_set_csum(
-            &self.fs().super_block,
-            &parent_de,
-            &dst_blk.block_data[..],
-        );
+        // error!("after dir remove ");
+        // let mut offset = 0;
+        // while offset < 0xff4 {
+        //     let de = Ext4DirEntry::try_from(&dst_blk.block_data[offset..]).unwrap();
 
+        //     if de.inode == 0 {
+        //         continue;
+        //     }
+
+        //     let s = get_name(de.name, de.name_len as usize);
+
+        //     if let Ok(s) = s {
+        //         info!("found name {:?} offset {:x?} entry_len {:x?}", s, offset, de.entry_len);
+        //     }
+        //     offset = offset + de.entry_len as usize;
+        // }
+
+
+
+        tail.ext4_dir_set_csum(&self.fs().super_block, &parent_de, &dst_blk.block_data[..]);
 
         tail.copy_to_slice(&mut dst_blk.block_data);
     }
 }
+
+fn ext_last_index(header: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
+    unsafe {
+        let entries_count = (*header).entries_count as isize;
+        let first_index = header.add(1) as *mut Ext4ExtentIndex;
+        first_index.offset(entries_count - 1)
+    }
+}
+
+
+fn memmove(dest: *mut u8, src: *const u8, n: usize) {
+    unsafe {
+        core::ptr::copy(src, dest, n);
+    }
+}
+
+pub fn ext_first_index(hdr: *const Ext4ExtentHeader) -> *const Ext4ExtentIndex {
+    unsafe {
+        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+        (hdr as *const u8).add(offset) as *const Ext4ExtentIndex
+    }
+}
+
+
+pub fn ext4_first_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
+    unsafe {
+        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+        (hdr as *mut u8).add(offset) as *mut Ext4ExtentIndex
+    }
+}
+
+
+fn ext4_ext_more_to_rm(path: &Ext4ExtentPath_new, to: Ext4Lblk) -> bool {
+    unsafe {
+        // 检查是否有更多的条目需要删除
+        if (*path.header).entries_count == 0 {
+            return false;
+        }
+
+        // 检查索引是否超出范围
+        if path.index > ext4_last_extent_index_mut(path.header) {
+            return false;
+        }
+
+        // 检查第一个块是否超出范围
+        if (*path.index).first_block as u64 > to {
+            return false;
+        }
+    }
+    
+    true
+}
+
+pub fn ext4_last_extent_index(hdr: *const Ext4ExtentHeader) -> *const Ext4ExtentIndex {
+    unsafe {
+        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
+        let ext_size = core::mem::size_of::<Ext4ExtentIndex>();
+        let hdr_ref = core::mem::transmute::<*const Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
+        let ext_count = hdr_ref.entries_count as usize;
+        (hdr as *const u8).add(hdr_size + (ext_count - 1) * ext_size) as *const Ext4ExtentIndex
+    }
+}
+
+
+pub fn ext4_first_extent_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent {
+    unsafe {
+        let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+        (hdr as *mut u8).add(offset) as *mut Ext4Extent
+    }
+}
+
+pub fn ext4_last_extent_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent {
+    unsafe {
+        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
+        let ext_size = core::mem::size_of::<Ext4Extent>();
+        let hdr_ref = core::mem::transmute::<*mut Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
+        let ext_count = hdr_ref.entries_count as usize;
+
+        (hdr as *mut u8).add(hdr_size + (ext_count - 1) * ext_size) as *mut Ext4Extent
+    }
+}
+
+pub fn ext4_ext_binsearch(path: &mut Ext4ExtentPath_new, block: u32) -> bool {
+    // 获取extent header的引用
+    // let eh = unsafe { &*path.header };
+    let eh = path.header;
+
+    unsafe {
+        if (*eh).entries_count == 0 {
+            return false;
+        }
+    }
+
+    // 定义左右两个指针，分别指向第一个和最后一个extent
+    let mut l = unsafe { ext4_first_extent_mut(eh).add(1) };
+    let mut r = unsafe { ext4_last_extent_mut(eh) };
+
+    // 如果extent header中没有有效的entry，直接返回false
+    unsafe {
+        if (*eh).entries_count == 0 {
+            return false;
+        }
+    }
+    // 使用while循环进行二分查找
+    while l <= r {
+        // 计算中间指针
+        let m = unsafe { l.add((r as usize - l as usize) / 2) };
+        // 获取中间指针所指向的extent的引用
+        let ext = unsafe { &*m };
+        // 比较逻辑块号和extent的第一个块号
+        if block < ext.first_block {
+            // 如果逻辑块号小于extent的第一个块号，说明目标在左半边，将右指针移动到中间指针的左边
+            r = unsafe { m.sub(1) };
+        } else {
+            // 如果逻辑块号大于或等于extent的第一个块号，说明目标在右半边，将左指针移动到中间指针的右边
+            l = unsafe { m.add(1) };
+        }
+    }
+    // 循环结束后，将path的extent字段设置为左指针的前一个位置
+    path.extent = unsafe { l.sub(1) };
+    // 返回true，表示找到了对应的extent
+    true
+}
+
+fn ext4_trans_block_get(bdev: &Arc<dyn BlockDevice>, bh: &mut Ext4Block, pblk: Ext4Fsblk) -> usize {
+    // 使用 BlockDevice 的 read_offset 方法从设备读取块数据并填充到 bh 中
+    let offset = (pblk as usize) * BLOCK_SIZE;
+
+    let data = bdev.read_offset(offset);
+    *bh.block_data = data;
+    bh.disk_block_id = pblk; // 设置块的逻辑块号
+    EOK
+}
+
+fn ext4_idx_pblock(ix: *const Ext4ExtentIndex) -> Ext4Lblk {
+    unsafe {
+        let leaf_lo = (*ix).leaf_lo as Ext4Lblk;
+        let leaf_hi = (*ix).leaf_hi as Ext4Lblk;
+        leaf_lo | (leaf_hi << 32)
+    }
+}
+
+pub fn ext4_ext_binsearch_idx(path: &mut Ext4ExtentPath_new, block: Ext4Lblk) -> bool {
+    // 获取extent header的引用
+    let eh = path.header;
+
+    // 定义左右两个指针，分别指向第一个和最后一个extent
+    let mut l = unsafe { ext4_first_extent_index_mut(eh).add(1) };
+    let mut r = unsafe { ext4_last_extent_index_mut(eh) };
+
+    // 如果extent header中没有有效的entry，直接返回false
+    unsafe {
+        if (*eh).entries_count == 0 {
+            return false;
+        }
+    }
+    // 使用while循环进行二分查找
+    while l <= r {
+        // 计算中间指针
+        let m = unsafe { l.add((r as usize - l as usize) / 2) };
+        // 获取中间指针所指向的extent的引用
+        let ext = unsafe { &*m };
+        // 比较逻辑块号和extent的第一个块号
+        if block < ext.first_block as u64{
+            // 如果逻辑块号小于extent的第一个块号，说明目标在左半边，将右指针移动到中间指针的左边
+            r = unsafe { m.sub(1) };
+        } else {
+            // 如果逻辑块号大于或等于extent的第一个块号，说明目标在右半边，将左指针移动到中间指针的右边
+            l = unsafe { m.add(1) };
+        }
+    }
+    // 循环结束后，将path的extent字段设置为左指针的前一个位置
+    path.index = unsafe { l.sub(1) };
+    // 返回true，表示找到了对应的extent
+    true
+}
+
+// pub fn ext4_first_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
+//     unsafe {
+//         let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+//         (hdr as *mut u8).add(offset) as *mut Ext4ExtentIndex
+//     }
+// }
+
+pub fn ext4_last_extent_index_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4ExtentIndex {
+    unsafe {
+        let hdr_size = core::mem::size_of::<Ext4ExtentHeader>();
+        let ext_size = core::mem::size_of::<Ext4ExtentIndex>();
+        let hdr_ref = core::mem::transmute::<*mut Ext4ExtentHeader, &Ext4ExtentHeader>(hdr);
+        let ext_count = hdr_ref.entries_count as usize;
+        (hdr as *mut u8).add(hdr_size + (ext_count - 1) * ext_size) as *mut Ext4ExtentIndex
+    }
+}
+
+
+// pub fn ext4_first_extent_mut(hdr: *mut Ext4ExtentHeader) -> *mut Ext4Extent {
+//     unsafe {
+//         let offset = core::mem::size_of::<Ext4ExtentHeader>();
+
+//         (hdr as *mut u8).add(offset) as *mut Ext4Extent
+//     }
+// }
+
+

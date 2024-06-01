@@ -98,6 +98,15 @@ pub fn ext4_bmap_bit_set(bmap: &mut [u8], bit: u32) {
 }
 
 
+/// Clears a specific bit in a bitmap.
+/// 参数 bmap: Mutable reference to the bitmap array.
+/// 参数 bit: The bit index to clear.
+pub fn ext4_bmap_bit_clr(bmap: &mut [u8], bit: u32) {
+    bmap[(bit >> 3) as usize] &= !(1 << (bit & 7));
+}
+
+
+
 // 查找位图中第一个为0的位
 pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u32) -> bool {
     let mut i: u32;
@@ -146,6 +155,16 @@ pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u3
     false
 }
 
+
+/// Clears a range of bits in a bitmap.
+/// 参数 bmap: Mutable reference to the bitmap array.
+/// 参数 start_bit: The start index of the bit range to clear.
+/// 参数 end_bit: The end index of the bit range to clear.
+pub fn ext4_bmap_bits_free(bmap: &mut [u8], start_bit: u32, end_bit: u32) {
+    for bit in start_bit..=end_bit {
+        ext4_bmap_bit_clr(bmap, bit);
+    }
+}
 
 pub fn ext4_path_skip<'a>(path:&'a str, skip: &str) -> &'a str{
     let path = &path.trim_start_matches(skip);

@@ -33,7 +33,7 @@ pub struct Ext4Superblock {
     last_check_time: u32,          // 最后检查时间
     check_interval: u32,           // 检查间隔
     pub creator_os: u32,           // 创建者操作系统
-    pub rev_level: u32,                // 版本号
+    rev_level: u32,                // 版本号
     def_resuid: u16,               // 保留块的默认uid
     def_resgid: u16,               // 保留块的默认gid
 
@@ -41,7 +41,7 @@ pub struct Ext4Superblock {
     first_inode: u32,            // 第一个非保留节点
     pub inode_size: u16,         // 节点结构的大小
     block_group_index: u16,      // 此超级块的块组索引
-    features_compatible: u32,    // 兼容特性集
+    pub features_compatible: u32,    // 兼容特性集
     features_incompatible: u32,  // 不兼容特性集
     pub features_read_only: u32, // 只读兼容特性集
     pub uuid: [u8; 16],          // 卷的128位uuid
@@ -177,17 +177,8 @@ impl Ext4Superblock {
 
     /// Returns the number of block groups.
     pub fn block_groups_count(&self) -> u32 {
-        let cnt = (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
-            / self.blocks_per_group;
-        if cnt == 0 {
-            1
-        } else {
-            cnt
-        } 
-    }
-
-    pub fn blocks_count(&self) -> u32 {
-        ((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo
+        (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
+            / self.blocks_per_group
     }
 
     pub fn desc_size(&self) -> u16 {
@@ -208,7 +199,7 @@ impl Ext4Superblock {
         let block_group_count = self.block_groups_count();
         let inodes_per_group = self.inodes_per_group;
 
-        let total_inodes = self.inodes_count;
+        let total_inodes = ((self.inodes_count as u64) << 32) as u32;
         if bgid < block_group_count - 1 {
             inodes_per_group
         } else {
@@ -225,28 +216,45 @@ impl Ext4Superblock {
     }
 
     pub fn set_free_blocks_count(&mut self, free_blocks: u64) {
-        self.free_blocks_count_lo = ((free_blocks << 32) >> 32).to_le() as u32;
+        self.free_blocks_count_lo = ((free_blocks << 32) >> 32) as u32;
+
+        info!(" free_blocks_count_lo {:x?}", self.free_blocks_count_lo);
         self.free_blocks_count_hi = (free_blocks >> 32) as u32;
     }
 
-    pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
-        };
-        block_device.write_offset(BASE_OFFSET, data);
-    }
 
-    pub fn sync_to_disk_with_csum(&mut self, block_device: Arc<dyn BlockDevice>) {
+    // pub fn set_blocks_count(&mut self, free_blocks: u64) {
+    //     self.blocks_count_lo = ((free_blocks << 32) >> 32) as u32;
+
+    //     info!(" free_blocks_count_lo {:x?}", self.free_blocks_count_lo);
+    //     self.blocks_count_hi = (free_blocks >> 32) as u32;
+    // }
+
+
+    pub fn sync_to_disk(&mut self, block_device: Arc<dyn BlockDevice>) {
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
         };
+
+
         let checksum = ext4_crc32c(
             EXT4_CRC32_INIT,
             &data,
             0x3fc,
         );
 
+        info!("checksum {:x?}", checksum);
         self.checksum = checksum;
+
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
+        };
+
+
+        block_device.write_offset(BASE_OFFSET, data);
+    }
+
+    pub fn sync_to_disk_with_csum(&self, block_device: Arc<dyn BlockDevice>) {
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
         };

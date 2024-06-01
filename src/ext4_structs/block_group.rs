@@ -241,17 +241,6 @@ impl Ext4BlockGroup {
         self.free_blocks_count_lo = ((cnt << 16) >> 16) as u16;
         self.free_blocks_count_hi = (cnt >> 16) as u16;
     }
-
-    pub fn ext4_blocks_in_group_cnt(&self, s: &Ext4Superblock) -> u32{
-        let blocks_count = s.blocks_count();
-        let blocks_per_group = s.blocks_per_group();
-        let mut block_groups_count = s.block_groups_count();
-
-        if (blocks_count % blocks_per_group) != 0  {
-            block_groups_count += 1;
-        }
-        block_groups_count
-    }
 }
 
 impl Ext4BlockGroup {

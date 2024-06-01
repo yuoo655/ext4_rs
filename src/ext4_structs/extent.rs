@@ -3,6 +3,7 @@ use crate::consts::*;
 use crate::prelude::*;
 use core::mem::size_of;
 use crate::BlockDevice;
+use crate::Ext4Block;
 
 /// Structure representing the header of an Ext4 extent.
 #[derive(Debug, Default, Clone, Copy)]
@@ -77,6 +78,26 @@ pub struct Ext4ExtentPath {
     pub extent: *mut Ext4Extent,
 }
 
+
+#[derive(Debug)]
+pub struct Ext4ExtentPath_new<'a>{
+    // Physical block number
+    pub p_block: u64,
+    // Single block descriptor
+    pub block: Ext4Block<'a>,
+    // Depth of this extent node
+    pub depth: u16,
+    // Max depth of the extent tree
+    pub maxdepth: u16,
+    // Pointer to the extent header
+    pub header: *mut Ext4ExtentHeader,
+    // Pointer to the index in the current node
+    pub index: *mut Ext4ExtentIndex,
+    // Pointer to the extent in the current node
+    pub extent: *mut Ext4Extent,
+}
+
+
 impl Default for Ext4ExtentPath {
     fn default() -> Self {
         Self {
@@ -95,7 +116,14 @@ impl<T> TryFrom<&[T]> for Ext4ExtentHeader {
     type Error = u64;
     fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
         let data = data;
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *mut _) })
+    }
+}
+
+impl Ext4ExtentHeader{
+    pub fn try_from_u32(data: &mut [u32]) -> Self{
+        // let data = data;
+        unsafe { core::ptr::read(data.as_mut_ptr() as *mut _) }
     }
 }
 
@@ -198,8 +226,13 @@ impl Ext4Extent {
     }
 
     /// Marks the extent as unwritten.
-    pub unsafe fn mark_unwritten(&mut self) {
+    pub fn mark_unwritten(&mut self) {
         self.block_count |= EXT_INIT_MAX_LEN;
+    }
+
+    pub fn store_pblock(&mut self, pblock: u64) {
+        self.start_lo = pblock as u32 & 0xffffffff;
+        self.start_hi = (((pblock as u32) << 31) << 1) as u16;
     }
 }
 
@@ -444,8 +477,8 @@ impl ExtentTreeNode {
         if self.header.depth == 0 {
             // 叶节点
             for extent in &self.extents {
-                if block_id >= extent.first_block
-                    && block_id < extent.first_block + extent.block_count as u32
+                if block_id >= extent.first_block as u64
+                    && block_id < extent.first_block as u64 + extent.block_count as u64
                 {
                     path.push(Ext4ExtentPathNew {
                         depth: self.header.depth as usize,
@@ -461,7 +494,7 @@ impl ExtentTreeNode {
         } else {
             // 索引节点
             for index in &self.indexes {
-                if block_id >= index.first_block {
+                if block_id >= index.first_block as u64 {
                     let node_data = block_device.read_offset(index.leaf_lo as usize * BLOCK_SIZE);
                     let child_node = self.load_node(&node_data);
 
@@ -475,6 +508,148 @@ impl ExtentTreeNode {
                     });
                     return child_node.find_extent(block_id, block_device.clone(), path);
                 }
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+#[derive(Clone, Copy)]
+pub struct SearchPath {
+    pub depth: u16,
+    pub maxdepth: u16,              // 次此查询路径最大深度
+    pub path: [Ext4ExtPath; 3],     // 路径
+    pub extent: Option<Ext4Extent>, // 此次查询的叶子节点
+    pub position: [usize; 3],
+}
+
+impl SearchPath{
+
+    pub fn new() -> Self{
+
+        Self{
+            depth:0,
+            maxdepth:0,
+            path: [Ext4ExtPath::new(); 3],
+            extent:None,
+            position: [0; 3],
+        }
+
+    }
+}
+
+impl Ext4ExtPath {
+    
+    pub fn new() -> Self {
+        Self{
+            header:None,
+            index:None,
+            extent:None
+        }
+    }
+}
+
+
+
+#[derive(Debug, Clone, Copy)]
+struct Ext4ExtPath {
+    pub header: Option<Ext4ExtentHeader>,
+    pub index: Option<Ext4ExtentIndex>,
+    pub extent: Option<Ext4Extent>,
+}
+
+
+
+
+impl ExtentTreeNode {
+
+    pub fn load_node_for_rm(data: &[u8]) -> Self {
+        let extent_header = Ext4ExtentHeader::try_from(data).unwrap();
+        let mut extents: Vec<Ext4Extent> = Vec::new();
+        let mut indexes: Vec<Ext4ExtentIndex> = Vec::new();
+
+        if extent_header.depth == 0 {
+            for en in 0..extent_header.entries_count {
+                let idx = (12 + en * 12) as usize;
+                let extent = Ext4Extent::try_from(&data[idx..]).unwrap();
+                extents.push(extent)
+            }
+        } else {
+            // only have extent_index
+            for en in 0..extent_header.entries_count {
+                let idx = (12 + en * 12) as usize;
+                let extent_idx = Ext4ExtentIndex::try_from(&data[idx..]).unwrap();
+                indexes.push(extent_idx)
+            }
+        }
+        Self {
+            header: extent_header,
+            extents: extents,
+            indexes: indexes,
+        }
+    }
+
+    pub fn find_extent_for_rm(
+        &self,
+        block_id: Ext4Lblk,
+        block_device: Arc<dyn BlockDevice>,
+        path: &mut SearchPath,
+    ) {
+
+
+        if self.header.depth == 0 {
+
+            let mut pos = 0;
+            // 叶节点
+            for extent in &self.extents {
+
+                if block_id >= extent.first_block as u64
+                    && block_id < extent.first_block as u64 + extent.block_count as u64
+                {
+
+                    path.path[path.depth as usize] = Ext4ExtPath {
+                        header: Some(self.header),
+                        index: None,
+                        extent: Some(*extent),
+                    };
+
+                    path.extent = Some(*extent);
+
+                    path.position[path.depth as usize] = pos;
+                    return;
+                }
+
+                pos += 1;
+            }
+        } else {
+            // 索引节点
+            for index in &self.indexes {
+                let mut pos = 0;
+                if block_id >= index.first_block as u64 {
+                    let node_data = block_device.read_offset(index.leaf_lo as usize);
+                    let child_node = Self::load_node_for_rm(&node_data);
+                    path.path[path.depth as usize] = Ext4ExtPath {
+                        header: Some(self.header),
+                        index: Some(*index),
+                        extent: None,
+                    };
+                    path.position[path.depth as usize] = pos;
+
+                    return child_node.find_extent_for_rm(block_id, block_device.clone(), path);
+                }
+
+                pos += 1;
             }
         }
     }

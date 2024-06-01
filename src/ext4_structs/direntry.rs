@@ -1,3 +1,5 @@
+use log::error;
+
 use super::*;
 use crate::consts::*;
 use crate::prelude::*;
@@ -70,6 +72,16 @@ impl<T> TryFrom<&[T]> for Ext4DirEntry {
     }
 }
 
+
+impl Ext4DirEntry{
+
+    pub fn from_u8(data: &mut [u8]) -> Self {
+
+        // let entry = unsafe { core::ptr::read(data.as_ptr() as *const Ext4DirEntry) };
+        let entry = unsafe { core::ptr::read(data.as_mut_ptr() as *mut Ext4DirEntry) };
+        entry
+    }
+}
 // impl TryFrom<&[u8]> for Ext4DirEntry {
 //     type Error = u64;
 //     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
@@ -92,6 +104,10 @@ impl Ext4DirEntry{
         name_len
     }
 
+    pub fn compare_name(&self, name: &str) -> bool {
+        &self.name[..name.len()] == name.as_bytes()
+    }
+
     #[allow(unused)]
     pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data:&[u8]) -> u32{
         
@@ -102,13 +118,18 @@ impl Ext4DirEntry{
 
         let uuid = s.uuid;
     
+        // log::error!("uuid {:x?}", uuid);
         csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
         csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
         csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
         let mut data = [0u8; 0xff4];
+
         unsafe{
             core::ptr::copy_nonoverlapping(blk_data.as_ptr(), data.as_mut_ptr(), blk_data.len());
         }
+        // log::error!("data {:?}", data);
+
+        log::error!("old crc: {:x?}", csum);
         csum = ext4_crc32c(csum, &data[..], 0xff4);
         csum
     }
@@ -119,16 +140,18 @@ impl Ext4DirEntry{
             core::slice::from_raw_parts(self as *const _ as *const u8, count)
         };
         dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntry>(), data.iter().cloned());
-        // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntry>()], data[..]);
     }
+
     pub fn copy_to_slice(&self, array: &mut [u8], offset: usize) {
-        let de_ptr = self as *const Ext4DirEntry as *const u8;
-        let array_ptr = array as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
         unsafe {
+            let de_ptr = self as *const Ext4DirEntry as *const u8;
+            let array_ptr = array as *mut [u8] as *mut u8;
+            let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
             core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
         }
+
     }
+
 }
 
 
@@ -163,6 +186,7 @@ pub struct Ext4DirEntryTail {
 impl Ext4DirEntryTail{
 
     pub fn new() -> Self {
+
         Self{
             reserved_zero1: 0,
             rec_len: core::mem::size_of::<Ext4DirEntryTail>() as u16,
@@ -170,12 +194,13 @@ impl Ext4DirEntryTail{
             reserved_ft: 0xDE,
             checksum: 0,
         }
-    }
 
+    }
     pub fn from(data: &mut [u8], blocksize: usize) -> Option<Self> {
         unsafe {
             let ptr = data as *mut [u8] as *mut u8;
             let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail);
+
             if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
                 log::info!("t.reserved_zero1");
                 return None;
@@ -194,6 +219,8 @@ impl Ext4DirEntryTail{
 
     pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8]){
         let csum = diren.ext4_dir_get_csum(s, blk_data);
+
+        error!("blk_data[0..0x60] {:x?}  csum {:x?}", &blk_data[0..0x60], csum);    
         self.checksum = csum;
     }
 
@@ -217,15 +244,21 @@ impl Ext4DirEntryTail{
     }
 
     pub fn copy_to_slice(&self, array: &mut [u8]) {
+
         let offset = BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>();
-        let de_ptr = self as *const Ext4DirEntryTail as *const u8;
-        let array_ptr = array as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<Ext4DirEntryTail>();
+
         unsafe {
+            let de_ptr = self as *const Ext4DirEntryTail as *const u8;
+            let array_ptr = array as *mut [u8] as *mut u8;
+            let count = core::mem::size_of::<Ext4DirEntryTail>();
             core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
         }
     }
+
+
+
 }
+
 
 
 pub struct Ext4DirSearchResult<'a> {
