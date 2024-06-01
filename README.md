@@ -13,7 +13,12 @@ git clone https://github.com/yuoo655/ext4_rs.git
 git checkout dev
 sh 1.sh
 ```
-
+## test
+```
+git clone https://github.com/yuoo655/ext4libtest.git
+cd ext4libtest
+sh run.sh
+```
 # features
 
 | 操作         |支持情况| 
