@@ -14,6 +14,31 @@ git checkout dev
 sh 1.sh
 ```
 
+# features
+
+| 操作         |支持情况| 
+|--------------|------|
+| mount        | ✅   |
+| open         | ✅   |
+| close        | ✅   |
+| lsdir        | ✅   |
+| mkdir        | ✅   |
+| read_file    | ✅   |
+| read_link    | ✅   |
+| create_file  | ✅   |
+| write_file   | ✅   |
+| link         | ✅   |
+| unlink       | ✅   |
+| file_truncate| ✅   |
+| file_remove  | ✅   |
+| umount       | ✅   |
+| dir_remove   | ❌   |
+
+file truncate/remove unlink  (see branch file_remove_dev)
+
+remove direntry will cause parent dir checksum fail in linux (need linux crypto subsystem)
+
+
 
 # how to use 
 
