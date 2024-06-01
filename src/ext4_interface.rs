@@ -309,8 +309,6 @@ impl Ext4 {
                 file.fpos = 0;
                 file.fsize = current_inode_ref.inner.inode.inode_get_size();
 
-                log::error!("size {:x?}", file.fsize);
-                // log::error!("inode_num {:x?} size_lo {:x?}  size_hi {:x?}", file.inode, current_inode_ref.inner.inode.size, current_inode_ref.inner.inode.size_hi);
                 return Ok(EOK);
             } else {
                 search_parent = Ext4InodeRef::get_inode_ref(
