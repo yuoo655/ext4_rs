@@ -21,7 +21,7 @@ pub trait Jbd2: Send + Sync + Any + Debug {
     fn recover(&mut self);
 }
 
-pub trait BlockDevice: Send + Sync + Any{
+pub trait BlockDevice: Send + Sync + Any {
     fn read_offset(&self, offset: usize) -> Vec<u8>;
     fn write_offset(&self, offset: usize, data: &[u8]);
 }
@@ -224,8 +224,8 @@ impl Ext4 {
 
         // load root inode
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
-        
-        if path == ""{
+
+        if path == "" {
             // open root directory
             file.inode = 2;
             file.fpos = 0;
@@ -304,7 +304,10 @@ impl Ext4 {
             // log::info!("find de name{:?} de inode {:x?}", name, dir_search_result.dentry.inode);
 
             if is_goal {
-                let current_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), dir_search_result.dentry.inode);
+                let current_inode_ref = Ext4InodeRef::get_inode_ref(
+                    self.self_ref.clone(),
+                    dir_search_result.dentry.inode,
+                );
                 file.inode = dir_search_result.dentry.inode;
                 file.fpos = 0;
                 file.fsize = current_inode_ref.inner.inode.inode_get_size();
@@ -351,26 +354,24 @@ impl Ext4 {
             .to_str()
             .map_err(|_| Errnum::ENOTSUP)?;
 
-        // Start processing the path from the mount point name
-        *name_off = mount_name.len() as u32;
-
-        // Skip the mount point name from the path to start processing after it
-        let mut search_path = &path[*name_off as usize..];
+        let mut search_path = path;
 
         loop {
+            while search_path.starts_with('/') {
+                *name_off += 1; // Skip the slash
+                search_path = &search_path[1..];
+            }
+
             let len = path_check_new(search_path, &mut is_goal);
+
+            let current_path_segment = &search_path[..len];
+
             if len == 0 || search_path.is_empty() {
                 // Path completely processed
                 break;
             }
 
-            let current_path_segment = &search_path[..len];
             search_path = &search_path[len..];
-
-            if search_path.starts_with('/') {
-                *name_off += 1; // Skip the slash
-                search_path = &search_path[1..];
-            }
 
             let r = self.ext4_dir_find_entry(
                 &mut current_inode_ref,
@@ -526,9 +527,12 @@ impl Ext4 {
         size: usize,
         read_cnt: &mut usize,
     ) -> Result<usize> {
-
         if ext4_file.fpos > ext4_file.fsize as usize {
-            log::error!("read offset exceeds file size  fpos {:x?}  fsize {:x?}", ext4_file.fpos, ext4_file.fsize);
+            log::error!(
+                "read offset exceeds file size  fpos {:x?}  fsize {:x?}",
+                ext4_file.fpos,
+                ext4_file.fsize
+            );
             return_errno_with_message!(Errnum::EINVAL, "read offset exceeds file size")
         }
 
@@ -671,7 +675,7 @@ impl Ext4 {
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
         root_inode_ref.write_back_inode();
     }
-
+    
 
     pub fn read_dir_entry(&self, inode: u64) -> Vec<Ext4DirEntry> {
         let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), inode as u32);
