@@ -26,6 +26,7 @@ pub const EXT4_INODE_MODE_SOFTLINK: usize = 0xA000;
 pub const EXT4_INODE_MODE_SOCKET: usize = 0xC000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 = 0xF000;
 
+pub const EXT4_INODE_BLOCK_SIZE:usize = 512;
 pub const EXT_MAX_BLOCKS: Ext4Lblk = core::u32::MAX;
 
 pub const EXT4_SUPERBLOCK_OS_HURD: u32 = 1;

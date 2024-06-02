@@ -39,7 +39,6 @@ sh run.sh
 | umount       | ✅   |
 | dir_remove   | ❌   |
 
-file truncate/remove unlink  (see branch file_remove_dev)
 
 
 # how to use 

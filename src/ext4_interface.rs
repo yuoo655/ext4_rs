@@ -675,7 +675,6 @@ impl Ext4 {
         let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
         root_inode_ref.write_back_inode();
     }
-    
 
     pub fn read_dir_entry(&self, inode: u64) -> Vec<Ext4DirEntry> {
         let mut inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), inode as u32);
@@ -717,9 +716,75 @@ impl Ext4 {
         entries
     }
 
+    pub fn ext4_trunc_inode(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        // mp: &Ext4MountPoint,
+        new_size: u64,
+    ) -> Result<usize> {
+        let mut inode_size = inode_ref.inner.inode.inode_get_size();
+
+        if inode_size > new_size {
+            let r = inode_ref.truncate_inode(new_size);
+        }
+
+        return_errno_with_message!(Errnum::ENOTSUP, "not support");
+    }
+
     #[allow(unused)]
     pub fn ext4_file_remove(&self, path: &str) -> Result<usize> {
-        return_errno_with_message!(Errnum::ENOTSUP, "not support");
+        let mut name_off = 0;
+
+        let mut file = Ext4File::new();
+
+        let mut ptr = Box::new(self.mount_point.clone());
+
+        file.mp = self.mount_point.clone();
+
+        let mut iflags = O_RDONLY;
+
+        let mut filetype = DirEntryType::EXT4_DE_UNKNOWN;
+
+        let mut root_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), 2);
+
+        let r = self.ext4_generic_open2(
+            &mut file,
+            path,
+            iflags,
+            filetype.bits(),
+            &mut root_inode_ref,
+            &mut name_off,
+        );
+
+        let child_inode = file.inode;
+
+        self.ext4_file_close(&mut file);
+
+        let mut child_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), child_inode);
+
+        let link_count = child_inode_ref.inner.inode.ext4_inode_get_links_cnt();
+
+        if link_count == 1 {
+            let mp = self.mount_point.clone();
+            self.ext4_trunc_inode(&mut child_inode_ref, 0x0);
+        }
+
+        // after trunc
+        let mut child_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), child_inode);
+
+        let mut is_goal = false;
+        let p = &path[name_off as usize..];
+        let len = path_check_new(p, &mut is_goal);
+        let r = self.ext4_unlink(
+            &mut root_inode_ref,
+            &mut child_inode_ref,
+            &p[..len as usize],
+            len as u32,
+        );
+
+        self.ext4_fs_put_inode_ref_csum(&mut root_inode_ref);
+
+        return Ok(EOK);
     }
 
     #[allow(unused)]

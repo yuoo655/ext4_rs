@@ -106,12 +106,12 @@ pub fn main() {
     let ext4 = Ext4::open(disk);
 
     // read regular file
+    log::info!("read regular file");
     let path = "/test_files/1.txt";
     let mut ext4_file = Ext4File::new();
     let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
     assert!(r.is_ok(), "open file error {:?}", r.err());
 
-    log::info!("ext4_file inode {:?}", ext4_file.inode);
     let mut read_buf = vec![0u8; 0x20000000];
     let mut read_cnt = 0;
     let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, 0x20000000, &mut read_cnt);
@@ -120,12 +120,12 @@ pub fn main() {
     log::info!("read data sample {:x?}", &read_buf[0..10]);
 
     // read link
+    log::info!("read link file");
     let path = "/test_files/linktest";
     let mut ext4_file = Ext4File::new();
     let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
     assert!(r.is_ok(), "open link error {:?}", r.err());
 
-    log::info!("ext4_file inode {:?}", ext4_file.inode);
     let mut read_buf = vec![0u8; 0x1000];
     let mut read_cnt = 0;
     let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, 0x1000, &mut read_cnt);
@@ -165,4 +165,21 @@ pub fn main() {
         assert!(r.is_ok(), "open file error {:?}", r.err());
         assert_eq!(write_data, read_buf);
     }
+
+    // ls
+    log::info!("test ls");
+    let path = "test_files";
+    let mut ext4_file = Ext4File::new();
+    let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
+    assert!(r.is_ok(), "open link error {:?}", r.err());
+
+    let de = ext4.read_dir_entry(ext4_file.inode as _);
+    for i in de.iter() {
+        log::info!("{:?}", i.get_name());
+    }
+
+    // file remove
+    let path = "test_files/file_to_remove";
+
+    let r = ext4.ext4_file_remove(&path);
 }

@@ -2,9 +2,9 @@ use super::*;
 use crate::consts::*;
 use crate::prelude::*;
 use crate::utils::*;
-use crate::BLOCK_SIZE;
 use crate::BlockDevice;
 use crate::BASE_OFFSET;
+use crate::BLOCK_SIZE;
 
 #[repr(C)]
 pub struct Ext4FakeDirEntry {
@@ -70,6 +70,13 @@ impl<T> TryFrom<&[T]> for Ext4DirEntry {
     }
 }
 
+impl Ext4DirEntry {
+    pub fn from_u8(data: &mut [u8]) -> Self {
+        let entry = unsafe { core::ptr::read(data.as_mut_ptr() as *mut Ext4DirEntry) };
+        entry
+    }
+}
+
 // impl TryFrom<&[u8]> for Ext4DirEntry {
 //     type Error = u64;
 //     fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
@@ -78,8 +85,7 @@ impl<T> TryFrom<&[T]> for Ext4DirEntry {
 //     }
 // }
 
-impl Ext4DirEntry{
-
+impl Ext4DirEntry {
     pub fn get_name(&self) -> String {
         let name_len = self.name_len as usize;
         let name = &self.name[..name_len];
@@ -93,31 +99,32 @@ impl Ext4DirEntry{
     }
 
     #[allow(unused)]
-    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data:&[u8], ino_gen:u32) -> u32{
-        
+    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data: &[u8], ino_gen: u32) -> u32 {
         let ino_index = self.inode;
 
         let mut csum = 0;
 
         let uuid = s.uuid;
-    
+
         csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
         csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
         csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
         let mut data = [0u8; 0xff4];
-        unsafe{
+        unsafe {
             core::ptr::copy_nonoverlapping(blk_data.as_ptr(), data.as_mut_ptr(), blk_data.len());
         }
+
         csum = ext4_crc32c(csum, &data[..], 0xff4);
         csum
     }
 
-    pub fn write_de_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize){
+    pub fn write_de_to_blk(&self, dst_blk: &mut Ext4Block, offset: usize) {
         let count = core::mem::size_of::<Ext4DirEntry>() / core::mem::size_of::<u8>();
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, count)
-        };
-        dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntry>(), data.iter().cloned());
+        let data = unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, count) };
+        dst_blk.block_data.splice(
+            offset..offset + core::mem::size_of::<Ext4DirEntry>(),
+            data.iter().cloned(),
+        );
         // assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntry>()], data[..]);
     }
     pub fn copy_to_slice(&self, array: &mut [u8], offset: usize) {
@@ -129,7 +136,6 @@ impl Ext4DirEntry{
         }
     }
 }
-
 
 pub fn copy_dir_entry_to_array(header: &Ext4DirEntry, array: &mut [u8], offset: usize) {
     unsafe {
@@ -152,17 +158,16 @@ pub fn copy_diren_tail_to_array(dir_en: &Ext4DirEntryTail, array: &mut [u8], off
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Ext4DirEntryTail {
-    pub reserved_zero1: u32, 
-    pub rec_len: u16,        
-    pub reserved_zero2: u8,  
-    pub reserved_ft: u8,     
-    pub checksum: u32,       // crc32c(uuid+inum+dirblock)
+    pub reserved_zero1: u32,
+    pub rec_len: u16,
+    pub reserved_zero2: u8,
+    pub reserved_ft: u8,
+    pub checksum: u32, // crc32c(uuid+inum+dirblock)
 }
 
-impl Ext4DirEntryTail{
-
+impl Ext4DirEntryTail {
     pub fn new() -> Self {
-        Self{
+        Self {
             reserved_zero1: 0,
             rec_len: core::mem::size_of::<Ext4DirEntryTail>() as u16,
             reserved_zero2: 0,
@@ -174,7 +179,8 @@ impl Ext4DirEntryTail{
     pub fn from(data: &mut [u8], blocksize: usize) -> Option<Self> {
         unsafe {
             let ptr = data as *mut [u8] as *mut u8;
-            let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>()) as *mut Ext4DirEntryTail);
+            let t = *(ptr.add(blocksize - core::mem::size_of::<Ext4DirEntryTail>())
+                as *mut Ext4DirEntryTail);
             if t.reserved_zero1 != 0 || t.reserved_zero2 != 0 {
                 log::info!("t.reserved_zero1");
                 return None;
@@ -191,7 +197,13 @@ impl Ext4DirEntryTail{
         }
     }
 
-    pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8], ino_gen: u32){
+    pub fn ext4_dir_set_csum(
+        &mut self,
+        s: &Ext4Superblock,
+        diren: &Ext4DirEntry,
+        blk_data: &[u8],
+        ino_gen: u32,
+    ) {
         let csum = diren.ext4_dir_get_csum(s, blk_data, ino_gen);
         self.checksum = csum;
     }
@@ -204,43 +216,64 @@ impl Ext4DirEntryTail{
         assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()], data[..]);
     }
 
-    pub fn sync_de_tail_to_disk(&self, block_device: Arc<dyn BlockDevice>, dst_blk: &mut Ext4Block){
+
+    pub fn sync_de_tail_to_disk(
+        &self,
+        block_device: Arc<dyn BlockDevice>,
+        dst_blk: &mut Ext4Block,
+    ) {
         let offset = BASE_OFFSET as usize - core::mem::size_of::<Ext4DirEntryTail>();
 
         let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Ext4DirEntryTail>())
+            core::slice::from_raw_parts(
+                self as *const _ as *const u8,
+                core::mem::size_of::<Ext4DirEntryTail>(),
+            )
         };
-        dst_blk.block_data.splice(offset..offset + core::mem::size_of::<Ext4DirEntryTail>(), data.iter().cloned());
-        assert_eq!(dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()], data[..]);
-        block_device.write_offset(dst_blk.disk_block_id as usize * BLOCK_SIZE, &dst_blk.block_data);
+        dst_blk.block_data.splice(
+            offset..offset + core::mem::size_of::<Ext4DirEntryTail>(),
+            data.iter().cloned(),
+        );
+        assert_eq!(
+            dst_blk.block_data[offset..offset + core::mem::size_of::<Ext4DirEntryTail>()],
+            data[..]
+        );
+        block_device.write_offset(
+            dst_blk.disk_block_id as usize * BLOCK_SIZE,
+            &dst_blk.block_data,
+        );
     }
 
     pub fn copy_to_slice(&self, array: &mut [u8]) {
+        unsafe {
         let offset = BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>();
         let de_ptr = self as *const Ext4DirEntryTail as *const u8;
         let array_ptr = array as *mut [u8] as *mut u8;
         let count = core::mem::size_of::<Ext4DirEntryTail>();
-        unsafe {
             core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
         }
     }
 }
 
-
 pub struct Ext4DirSearchResult<'a> {
     pub block: Ext4Block<'a>,
     pub dentry: Ext4DirEntry,
     pub offset: usize,
-    pub last_offset : usize,
+    pub last_offset: usize,
     pub block_id: usize,
 }
 
 impl<'a> Ext4DirSearchResult<'a> {
     pub fn new(block: Ext4Block<'a>, dentry: Ext4DirEntry) -> Self {
-        Self { block, dentry, offset:0 , last_offset:0 , block_id: 0}
+        Self {
+            block,
+            dentry,
+            offset: 0,
+            last_offset: 0,
+            block_id: 0,
+        }
     }
 }
-
 
 bitflags! {
     #[derive(PartialEq, Eq)]
@@ -256,7 +289,6 @@ bitflags! {
     }
 }
 
-
 pub fn ext4_fs_correspond_inode_mode(filetype: u8) -> u32 {
     // log::info!("filetype: {:?}", filetype);
     let file_type = DirEntryType::from_bits(filetype).unwrap();
@@ -269,7 +301,6 @@ pub fn ext4_fs_correspond_inode_mode(filetype: u8) -> u32 {
         DirEntryType::EXT4_DE_FIFO => EXT4_INODE_MODE_FIFO as u32,
         DirEntryType::EXT4_DE_SOCK => EXT4_INODE_MODE_SOCKET as u32,
         _ => {
-
             // FIXME: unsupported filetype
             EXT4_INODE_MODE_FILE as u32
         }

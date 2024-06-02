@@ -74,14 +74,12 @@ pub fn ext4_crc32c(crc: u32, buf: &[u8], size: u32) -> u32 {
     crc32(crc, buf, size, &CRC32C_TAB)
 }
 
-
 /// 检查位图中的某一位是否被设置
 /// 参数 bmap 位图缓冲区
 /// 参数 bit 要检查的位
 pub fn ext4_bmap_is_bit_set(bmap: &[u8], bit: u32) -> bool {
     bmap[(bit >> 3) as usize] & (1 << (bit & 7)) != 0
 }
-
 
 /// 检查位图中的某一位是否被清除
 /// 参数 bmap 位图缓冲区
@@ -97,6 +95,12 @@ pub fn ext4_bmap_bit_set(bmap: &mut [u8], bit: u32) {
     bmap[(bit >> 3) as usize] |= 1 << (bit & 7);
 }
 
+/// Clears a specific bit in a bitmap.
+/// 参数 bmap: Mutable reference to the bitmap array.
+/// 参数 bit: The bit index to clear.
+pub fn ext4_bmap_bit_clr(bmap: &mut [u8], bit: u32) {
+    bmap[(bit >> 3) as usize] &= !(1 << (bit & 7));
+}
 
 // 查找位图中第一个为0的位
 pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u32) -> bool {
@@ -146,8 +150,17 @@ pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u3
     false
 }
 
+/// Clears a range of bits in a bitmap.
+/// 参数 bmap: Mutable reference to the bitmap array.
+/// 参数 start_bit: The start index of the bit range to clear.
+/// 参数 end_bit: The end index of the bit range to clear.
+pub fn ext4_bmap_bits_free(bmap: &mut [u8], start_bit: u32, end_bit: u32) {
+    for bit in start_bit..=end_bit {
+        ext4_bmap_bit_clr(bmap, bit);
+    }
+}
 
-pub fn ext4_path_skip<'a>(path:&'a str, skip: &str) -> &'a str{
+pub fn ext4_path_skip<'a>(path: &'a str, skip: &str) -> &'a str {
     let path = &path.trim_start_matches(skip);
     path
 }
@@ -156,7 +169,7 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-pub fn ext4_path_check(path:&str, is_goal:&mut bool) -> usize{
+pub fn ext4_path_check(path: &str, is_goal: &mut bool) -> usize {
     for (i, c) in path.chars().enumerate() {
         if c == '/' {
             *is_goal = false;
@@ -165,7 +178,7 @@ pub fn ext4_path_check(path:&str, is_goal:&mut bool) -> usize{
     }
     let path = path.to_string();
     *is_goal = true;
-    return path.len();    
+    return path.len();
 }
 
 // A function that takes a &str and returns a &[char]
@@ -227,7 +240,10 @@ mod path_tests {
         // 测试路径末尾的 null 字符
         let path = "home\0";
         assert_eq!(path_check_new(path, &mut is_goal), 4);
-        assert!(is_goal, "Path with null character should set is_goal to true");
+        assert!(
+            is_goal,
+            "Path with null character should set is_goal to true"
+        );
 
         // // 测试超长文件名
         // let long_path = "a".repeat(EXT4_DIRECTORY_FILENAME_LEN + 10);

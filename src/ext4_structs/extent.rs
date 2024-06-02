@@ -115,6 +115,14 @@ impl<T> TryFrom<&[T]> for Ext4Extent {
     }
 }
 
+impl Ext4ExtentHeader{
+    pub fn try_from_u32(data: &mut [u32]) -> Self{
+        // let data = data;
+        unsafe { core::ptr::read(data.as_mut_ptr() as *mut _) }
+    }
+}
+
+
 impl Ext4ExtentIndex {
     /// Returns the physical block number represented by this index.
     pub fn pblock(&self) -> u64 {
@@ -196,10 +204,14 @@ impl Ext4Extent {
                 self.get_actual_len() + prev.get_actual_len() <= EXT_INIT_MAX_LEN
             }
     }
-
     /// Marks the extent as unwritten.
-    pub unsafe fn mark_unwritten(&mut self) {
+    pub fn mark_unwritten(&mut self) {
         self.block_count |= EXT_INIT_MAX_LEN;
+    }
+
+    pub fn store_pblock(&mut self, pblock: u64) {
+        self.start_lo = pblock as u32 & 0xffffffff;
+        self.start_hi = (((pblock as u32) << 31) << 1) as u16;
     }
 }
 
@@ -477,5 +489,5 @@ impl ExtentTreeNode {
                 }
             }
         }
-    }
+    }    
 }
