@@ -178,3 +178,23 @@ for i in 0..10{
     }
 }
 ```
+
+
+### ls
+```rust
+let path = "test_files";
+let mut ext4_file = Ext4File::new();
+let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
+assert!(r.is_ok(), "open link error {:?}", r.err());
+
+let de = ext4.read_dir_entry(ext4_file.inode as _);
+for i in de.iter() {
+    log::info!("{:?}", i.get_name());
+}
+```
+
+### file remove
+```rust
+let path = "test_files/file_to_remove";
+let r = ext4.ext4_file_remove(&path);
+```

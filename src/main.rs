@@ -106,7 +106,7 @@ pub fn main() {
     let ext4 = Ext4::open(disk);
 
     // read regular file
-    log::info!("read regular file");
+    log::info!("----read regular file----");
     let path = "/test_files/1.txt";
     let mut ext4_file = Ext4File::new();
     let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
@@ -120,7 +120,7 @@ pub fn main() {
     log::info!("read data sample {:x?}", &read_buf[0..10]);
 
     // read link
-    log::info!("read link file");
+    log::info!("----read link file----");
     let path = "/test_files/linktest";
     let mut ext4_file = Ext4File::new();
     let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
@@ -167,7 +167,7 @@ pub fn main() {
     }
 
     // ls
-    log::info!("test ls");
+    log::info!("----ls----");
     let path = "test_files";
     let mut ext4_file = Ext4File::new();
     let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
@@ -178,6 +178,7 @@ pub fn main() {
         log::info!("{:?}", i.get_name());
     }
 
+    log::info!("----file remove----");
     // file remove
     let path = "test_files/file_to_remove";
 
