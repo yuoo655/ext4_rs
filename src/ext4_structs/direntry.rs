@@ -86,6 +86,11 @@ impl Ext4DirEntry {
 // }
 
 impl Ext4DirEntry {
+    pub fn get_de_type(&self) -> u8{
+        let de_type = unsafe{self.inner.inode_type} as u8;
+        de_type
+    }
+
     pub fn get_name(&self) -> String {
         let name_len = self.name_len as usize;
         let name = &self.name[..name_len];
