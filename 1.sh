@@ -25,7 +25,7 @@ cargo run
 sudo mount ./ex4.img ./tmp/
 cd tmp
 ls
-cd dirtest0
+cd test_files
 ls
 cd ../../
 sudo umount ./tmp
