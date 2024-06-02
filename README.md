@@ -41,9 +41,6 @@ sh run.sh
 
 file truncate/remove unlink  (see branch file_remove_dev)
 
-remove direntry will cause parent dir checksum fail in linux (need linux crypto subsystem)
-
-
 
 # how to use 
 

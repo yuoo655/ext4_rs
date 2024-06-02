@@ -93,10 +93,9 @@ impl Ext4DirEntry{
     }
 
     #[allow(unused)]
-    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data:&[u8]) -> u32{
+    pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data:&[u8], ino_gen:u32) -> u32{
         
         let ino_index = self.inode;
-        let ino_gen = 0 as u32;
 
         let mut csum = 0;
 
@@ -192,8 +191,8 @@ impl Ext4DirEntryTail{
         }
     }
 
-    pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8]){
-        let csum = diren.ext4_dir_get_csum(s, blk_data);
+    pub fn ext4_dir_set_csum(&mut self, s: &Ext4Superblock, diren: &Ext4DirEntry, blk_data: &[u8], ino_gen: u32){
+        let csum = diren.ext4_dir_get_csum(s, blk_data, ino_gen);
         self.checksum = csum;
     }
 

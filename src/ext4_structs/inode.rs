@@ -1006,10 +1006,12 @@ impl Ext4InodeRef{
         let parent_de = Ext4DirEntry::try_from(&dst_blk.block_data[..]).unwrap();
         let mut tail = Ext4DirEntryTail::from(&mut dst_blk.block_data, BLOCK_SIZE).unwrap();
 
+        let ino_gen = self.inner.inode.generation;
         tail.ext4_dir_set_csum(
             &self.fs().super_block,
             &parent_de,
             &dst_blk.block_data[..],
+            ino_gen
         );
 
 
