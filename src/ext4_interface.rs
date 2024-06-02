@@ -791,4 +791,168 @@ impl Ext4 {
     pub fn ext4_dir_remove(&self, path: &str) -> Result<usize> {
         return_errno_with_message!(Errnum::ENOTSUP, "not support");
     }
+
+    #[allow(unused)]
+    pub fn ext4_open_from(
+        &self,
+        parent_inode: u32,
+        file: &mut Ext4File,
+        path: &str,
+        flags: &str,
+        file_expect: bool,
+    ) -> Result<usize> {
+        let mut iflags = 0;
+        let mut filetype = DirEntryType::EXT4_DE_UNKNOWN;
+
+        // get mount point
+        file.mp = self.mount_point.clone();
+
+        // get open flags
+        iflags = self.ext4_parse_flags(flags).unwrap();
+
+        // file for dir
+        if file_expect {
+            filetype = DirEntryType::EXT4_DE_REG_FILE;
+        } else {
+            filetype = DirEntryType::EXT4_DE_DIR;
+        }
+
+        if iflags & O_CREAT != 0 {
+            self.ext4_trans_start();
+        }
+
+        // let mut parent_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), parent_inode);
+
+        let mut name_off = 0;
+        let r = self.ext4_generic_open_from(
+            file,
+            path,
+            iflags,
+            filetype.bits(),
+            parent_inode,
+            &mut name_off,
+        );
+        r
+    }
+
+
+    // with dir search path offset
+    pub fn ext4_generic_open_from(
+        &self,
+        file: &mut Ext4File,
+        path: &str,
+        iflags: u32,
+        ftype: u8,
+        parent_inode: u32,
+        name_off: &mut u32,
+    ) -> Result<usize> {
+        let mut is_goal = false;
+
+        let mut data: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
+        let ext4_blk = Ext4Block {
+            logical_block_id: 0,
+            disk_block_id: 0,
+            block_data: &mut data,
+            dirty: true,
+        };
+        let de = Ext4DirEntry::default();
+        let mut dir_search_result = Ext4DirSearchResult::new(ext4_blk, de);
+
+        // Load the root inode reference
+        let mut current_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), parent_inode);
+
+        let mount_name = self
+            .mount_point
+            .mount_name
+            .to_str()
+            .map_err(|_| Errnum::ENOTSUP)?;
+
+        let mut search_path = path;
+
+        loop {
+            while search_path.starts_with('/') {
+                *name_off += 1; // Skip the slash
+                search_path = &search_path[1..];
+            }
+
+            let len = path_check_new(search_path, &mut is_goal);
+
+            let current_path_segment = &search_path[..len];
+
+            if len == 0 || search_path.is_empty() {
+                // Path completely processed
+                break;
+            }
+
+            search_path = &search_path[len..];
+
+            log::info!("current_path_segment: {:?}", current_path_segment);
+            let r = self.ext4_dir_find_entry(
+                &mut current_inode_ref,
+                current_path_segment,
+                len as u32,
+                &mut dir_search_result,
+            );
+            if let Err(e) = r {
+                if e.error() != Errnum::ENOENT.into() || (iflags & O_CREAT) == 0 {
+                    return_errno_with_message!(Errnum::ENOENT, "file not found and not create");
+                }
+                // Handle file or directory creation if allowed
+                let new_inode_type = if is_goal {
+                    ftype
+                } else {
+                    DirEntryType::EXT4_DE_DIR.bits()
+                };
+
+                let mut new_inode_ref = Ext4InodeRef::new(self.self_ref.clone());
+                let r = new_inode_ref.ext4_fs_alloc_inode(new_inode_type);
+
+                if r != EOK {
+                    return_errno_with_message!(Errnum::EALLOCFIAL, "alloc inode fail");
+                }
+
+                new_inode_ref.ext4_fs_inode_blocks_init();
+
+                let r = self.ext4_link(
+                    &mut current_inode_ref,
+                    &mut new_inode_ref,
+                    current_path_segment,
+                    len as u32,
+                );
+
+                if r != EOK {
+                    /*Fail. Free new inode.*/
+                    return_errno_with_message!(Errnum::ELINKFIAL, "link fail");
+                }
+
+                self.ext4_fs_put_inode_ref_csum(&mut current_inode_ref);
+                self.ext4_fs_put_inode_ref_csum(&mut new_inode_ref);
+                // self.ext4_fs_put_inode_ref_csum(parent_inode);
+
+                current_inode_ref = new_inode_ref; // Continue with the new inode
+                continue;
+            }
+
+            // *parent_inode = current_inode_ref;
+
+            // Update the current inode to the found directory entry's inode
+            current_inode_ref =
+                Ext4InodeRef::get_inode_ref(self.self_ref.clone(), dir_search_result.dentry.inode);
+
+            if is_goal {
+                break;
+            }
+
+            *name_off += len as u32;
+        }
+
+        if is_goal {
+            file.inode = current_inode_ref.inode_num;
+            file.fpos = 0;
+            file.fsize = current_inode_ref.inner.inode.inode_get_size();
+        }
+
+        Ok(EOK)
+    }
+
 }

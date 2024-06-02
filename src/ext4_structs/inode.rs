@@ -90,7 +90,7 @@ impl Ext4Inode {
         self.links_count = cnt;
     }
 
-    pub fn ext4_inode_get_links_cnt(&mut self) -> u16 {
+    pub fn ext4_inode_get_links_cnt(&self) -> u16 {
         self.links_count
     }
 
@@ -111,20 +111,39 @@ impl Ext4Inode {
         self.size as u64 | ((self.size_hi as u64) << 32)
     }
 
-    pub fn ext4_inode_set_access_time(&mut self, access_time: u32) {
+    pub fn ext4_inode_set_atime(&mut self, access_time: u32) {
         self.atime = access_time;
     }
 
-    pub fn ext4_inode_set_change_inode_time(&mut self, change_inode_time: u32) {
+    pub fn ext4_inode_get_atime(&self) -> u32 {
+        self.atime
+    }
+
+    pub fn ext4_inode_set_ctime(&mut self, change_inode_time: u32) {
         self.ctime = change_inode_time;
     }
 
-    pub fn ext4_inode_set_modif_time(&mut self, modif_time: u32) {
+    pub fn ext4_inode_get_ctime(&self) -> u32 {
+        self.ctime
+    }
+
+    pub fn ext4_inode_set_mtime(&mut self, modif_time: u32) {
         self.mtime = modif_time;
+    }
+
+    pub fn ext4_inode_get_mtime(&self) -> u32 {
+        self.mtime
     }
 
     pub fn ext4_inode_set_del_time(&mut self, del_time: u32) {
         self.dtime = del_time;
+    }
+
+    pub fn ext4_inode_set_crtime(&mut self, crtime: u32) {
+        self.i_crtime = crtime;
+    }
+    pub fn ext4_inode_get_crtime(&self) -> u32 {
+        self.i_crtime
     }
 
     pub fn ext4_inode_set_blocks_count(&mut self, blocks_count: u32) {
@@ -856,9 +875,9 @@ impl Ext4InodeRef {
         inode.ext4_inode_set_uid(0);
         inode.ext4_inode_set_gid(0);
         inode.ext4_inode_set_size(0);
-        inode.ext4_inode_set_access_time(0);
-        inode.ext4_inode_set_change_inode_time(0);
-        inode.ext4_inode_set_modif_time(0);
+        inode.ext4_inode_set_atime(0);
+        inode.ext4_inode_set_ctime(0);
+        inode.ext4_inode_set_mtime(0);
         inode.ext4_inode_set_del_time(0);
         inode.ext4_inode_set_flags(0);
         inode.ext4_inode_set_generation(0);
@@ -1406,4 +1425,48 @@ impl Ext4InodeRef {
         csum = ext4_crc32c(csum, &data[..], 0xff4);
         csum
     }
+
+    // pub fn set_inode_mode(&mut self, mode: u16) {
+    //     self.inner.inode.mode = mode;
+    // }
+
+    // pub fn set_inode_uid(&mut self, uid: u16) {
+    //     self.inner.inode.ext4_inode_set_uid(uid)
+    // }
+
+    // pub fn set_inode_gid(&mut self, gid: u16) {
+    //     self.inner.inode.ext4_inode_set_gid(gid)
+    // }
+
+    // pub fn set_inode_size(&mut self, size: u64) {
+    //     self.inner.inode.ext4_inode_set_size(size)
+    // }
+
+    // pub fn set_inode_atime(&mut self, atime: u32) {
+    //     self.inner.inode.ext4_inode_set_atime(atime)
+    // }
+
+    // pub fn set_inode_mtime(&mut self, mtime: u32) {
+    //     self.inner.inode.ext4_inode_set_ctime(mtime)
+    // }
+
+    // pub fn set_inode_ctime(&mut self, ctime: u32) {
+    //     self.inner.inode.ext4_inode_set_ctime(ctime)
+    // }
+
+    // pub fn set_inode_crtime(&mut self, crtime: u32) {
+    //     self.inner.inode.ext4_inode_set_crtime(crtime)
+    // }
+
+    // pub fn set_inode_chgtime(&mut self, mode: u16) {
+    //     self.inner.inode.mode = mode;
+    // }
+
+    // pub fn set_inode_bkuptime(&mut self, mode: u16) {
+    //     self.inner.inode.mode = mode;
+    // }
+
+    // pub fn set_inode_flags(&mut self, mode: u16) {
+    //     self.inner.inode.mode = mode;
+    // }
 }
