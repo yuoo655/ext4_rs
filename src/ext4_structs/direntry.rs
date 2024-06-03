@@ -86,6 +86,23 @@ impl Ext4DirEntry {
 // }
 
 impl Ext4DirEntry {
+
+    pub fn unused(&self) -> bool {
+        self.inode == 0
+    }
+
+    pub fn set_unused(&mut self) {
+        self.inode = 0
+    }
+
+    pub fn compare_name(&self, name: &str) -> bool {
+        &self.name[..name.len()] == name.as_bytes()
+    }
+
+    pub fn entry_len(&self) -> u16 {
+        self.entry_len
+    }
+
     pub fn get_de_type(&self) -> u8{
         let de_type = unsafe{self.inner.inode_type} as u8;
         de_type

@@ -354,6 +354,39 @@ impl Ext4 {
         }
     }
 
+    pub fn ext4_dir_find_entry_new(
+        &self,
+        parent: &mut Ext4InodeRef,
+        name: &str,
+    ) -> Result<Ext4DirEntry> {        
+        let inode_size: u32 = parent.inner.inode.size;
+        let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
+        
+        let mut iblock = 0;
+        while iblock < total_blocks {
+            let fblock = parent.get_pblock(&mut iblock);
+
+            // load_block
+            let mut data = parent
+                .fs()
+                .block_device
+                .read_offset(fblock as usize * BLOCK_SIZE);
+            let ext4_block = Ext4Block {
+                logical_block_id: iblock,
+                disk_block_id: fblock,
+                block_data: &mut data,
+                dirty: false,
+            };
+
+            let r = self.dir_find_in_block_new(&ext4_block, name);
+            if let Ok(r) = r {
+                return Ok(r);
+            }
+            iblock += 1;
+        }
+        return_errno_with_message!(Errnum::ENOENT, "file not found");
+    }
+
     pub fn ext4_dir_find_entry(
         &self,
         parent: &mut Ext4InodeRef,
@@ -430,6 +463,23 @@ impl Ext4 {
         }
 
         false
+    }
+
+    pub fn dir_find_in_block_new(
+        &self,
+        block: &Ext4Block,
+        name: &str,
+    ) -> Result<Ext4DirEntry> {
+        
+        let mut offset = 0;
+        while offset < BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>() {
+            let de = Ext4DirEntry::try_from(&block.block_data[offset..]).unwrap();
+            if !de.unused() && de.compare_name(name) {
+                return Ok(de);
+            }
+            offset += de.entry_len() as usize;
+        }
+        return_errno_with_message!(Errnum::ENOENT, "dir find in block failed");
     }
 
     pub fn dir_find_entry_new(

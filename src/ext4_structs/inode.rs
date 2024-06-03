@@ -756,6 +756,18 @@ impl Ext4InodeRef {
     }
 
     #[allow(unused)]
+    pub fn get_pblock(&mut self, iblock: &mut Ext4Lblk) -> Ext4Fsblk {
+        let current_block: Ext4Fsblk;
+        let mut current_fsblk: Ext4Fsblk = 0;
+
+        let mut blocks_count = 0;
+
+        self.get_blocks_new(*iblock, 1, &mut current_fsblk, false, &mut blocks_count);
+
+        current_fsblk
+    }
+
+    #[allow(unused)]
     pub fn ext4_fs_get_inode_dblk_idx_internal(
         &mut self,
         iblock: &mut Ext4Lblk,
@@ -943,7 +955,7 @@ impl Ext4InodeRef {
 impl Ext4InodeRef {
     #[allow(unused)]
     /// Searches for an extent and initializes path data structures accordingly.
-    pub fn find_extent_new(&mut self, block_id: Ext4Lblk) -> Vec<Ext4ExtentPathNew> {
+    pub fn find_extent_new(&self, block_id: Ext4Lblk) -> Vec<Ext4ExtentPathNew> {
         let mut path: Vec<Ext4ExtentPathNew> = Vec::new();
 
         let root_data = &self.inner.inode.block[..];
@@ -958,6 +970,7 @@ impl Ext4InodeRef {
     }
 
     #[allow(unused)]
+
     /// Gets blocks from an inode and manages extent creation if necessary.
     pub fn get_blocks_new(
         &mut self,
@@ -1019,6 +1032,13 @@ impl Ext4InodeRef {
             newex.start_hi = (((alloc_block as u32) << 31) << 1) as u16;
             newex.block_count = allocated as u16;
         }
+    }
+
+    /// Gets blocks from an inode and manages extent creation if necessary.
+    pub fn find_extent_foo(&self, iblock: Ext4Lblk) -> Vec<Ext4ExtentPathNew> {
+        let path: Vec<Ext4ExtentPathNew> = self.find_extent_new(iblock);
+
+        path
     }
 }
 
@@ -1469,4 +1489,77 @@ impl Ext4InodeRef {
     // pub fn set_inode_flags(&mut self, mode: u16) {
     //     self.inner.inode.mode = mode;
     // }
+}
+
+impl Ext4InodeRef {
+    pub fn inode_is_type(&self, inode_type: u32) -> bool {
+        let super_block = self.fs().super_block;
+        self.inner.inode.ext4_inode_type(&super_block) == inode_type
+    }
+
+    pub fn is_dir(&self) -> bool {
+        self.inode_is_type(EXT4_INODE_MODE_DIRECTORY as u32)
+    }
+
+    // find a entry
+    pub fn inode_has_entry(&self) -> bool {
+        let inode_ref = self;
+
+        let mut iblock = 0;
+        let block_size = inode_ref.fs().super_block.block_size();
+        let inode_size = inode_ref.inner.inode.inode_get_size();
+        let total_blocks = inode_size as u32 / block_size;
+        let mut fblock: Ext4Fsblk = 0;
+
+        while iblock < total_blocks {
+            let path: Vec<Ext4ExtentPathNew> = self.find_extent_foo(iblock);
+
+            if path.len() == 0 {
+                return false;
+            }
+            let last = path.last().unwrap();
+            if let Some(pblock) = last.p_block {
+                let ee_start = pblock as u32;
+                let ee_block = last.first_block as u32;
+                fblock = (iblock - ee_block + ee_start) as u64;
+            }
+
+            // load_block
+            let mut data = inode_ref
+                .fs()
+                .block_device
+                .read_offset(fblock as usize * BLOCK_SIZE);
+            let ext4_block = Ext4Block {
+                logical_block_id: iblock,
+                disk_block_id: fblock,
+                block_data: &mut data,
+                dirty: false,
+            };
+
+            let mut offset = 0;
+            while offset < ext4_block.block_data.len() {
+                let de = Ext4DirEntry::try_from(&ext4_block.block_data[offset..]).unwrap();
+                offset = offset + de.entry_len as usize;
+                if de.inode == 0 {
+                    continue;
+                }
+                
+                // skip . and ..
+                if de.get_name() == "." || de.get_name() == ".." {
+                    continue;
+                }
+                return true;
+            }
+            iblock += 1
+        }
+
+        false
+    }
+
+    pub fn has_children(&self) -> bool {
+        if !self.is_dir() {
+            return false;
+        }
+        self.inode_has_entry()
+    }
 }

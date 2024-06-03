@@ -719,10 +719,9 @@ impl Ext4 {
     pub fn ext4_trunc_inode(
         &self,
         inode_ref: &mut Ext4InodeRef,
-        // mp: &Ext4MountPoint,
         new_size: u64,
     ) -> Result<usize> {
-        let mut inode_size = inode_ref.inner.inode.inode_get_size();
+        let inode_size = inode_ref.inner.inode.inode_get_size();
 
         if inode_size > new_size {
             let r = inode_ref.truncate_inode(new_size);
@@ -788,8 +787,43 @@ impl Ext4 {
     }
 
     #[allow(unused)]
-    pub fn ext4_dir_remove(&self, path: &str) -> Result<usize> {
-        return_errno_with_message!(Errnum::ENOTSUP, "not support");
+    pub fn ext4_dir_remove(&self, parent_inode: u32, path: &str) -> Result<usize> {
+        /*Check if exist.*/
+        let mut name_off = 0;
+
+        let mut file = Ext4File::new();
+
+        file.mp = self.mount_point.clone();
+
+        let mut iflags = O_RDONLY;
+
+        let mut filetype = DirEntryType::EXT4_DE_UNKNOWN;
+
+        let mut parent_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), parent_inode);
+
+        let r = self.ext4_dir_find_entry_new(&mut parent_inode_ref, path)?;
+
+        let mut child_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), r.inode);
+
+        if child_inode_ref.has_children(){
+            return_errno_with_message!(Errnum::ENOTSUP, "rm dir with children not supported");
+        }
+
+        /* Truncate */
+        self.ext4_trunc_inode(&mut child_inode_ref, 0);
+
+        self.ext4_unlink(&mut parent_inode_ref, &mut child_inode_ref, path, path.len() as u32);
+
+        self.ext4_fs_put_inode_ref_csum(&mut parent_inode_ref);
+
+
+        // to do 
+
+        // ext4_inode_set_del_time
+        // ext4_inode_set_links_cnt
+        // ext4_fs_free_inode(&child)
+
+        return Ok(EOK);
     }
 
     #[allow(unused)]
@@ -835,7 +869,6 @@ impl Ext4 {
         r
     }
 
-
     // with dir search path offset
     pub fn ext4_generic_open_from(
         &self,
@@ -859,7 +892,8 @@ impl Ext4 {
         let mut dir_search_result = Ext4DirSearchResult::new(ext4_blk, de);
 
         // Load the root inode reference
-        let mut current_inode_ref = Ext4InodeRef::get_inode_ref(self.self_ref.clone(), parent_inode);
+        let mut current_inode_ref =
+            Ext4InodeRef::get_inode_ref(self.self_ref.clone(), parent_inode);
 
         let mount_name = self
             .mount_point
@@ -954,5 +988,4 @@ impl Ext4 {
 
         Ok(EOK)
     }
-
 }

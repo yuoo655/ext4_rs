@@ -3,9 +3,9 @@
 ## env
 wsl2 ubuntu22.04
 
-rust version nightly-2023-12-28
+rust version nightly-2024-06-01
 
-rustc 1.77.0-nightly   
+rustc 1.80.0-nightly (ada5e2c7b 2024-05-31)
 
 ## read/write example
 ```sh
@@ -37,7 +37,7 @@ sh run.sh
 | file_truncate| ✅   |
 | file_remove  | ✅   |
 | umount       | ✅   |
-| dir_remove   | ❌   |
+| dir_remove   | ✅   |
 
 
 
@@ -169,4 +169,11 @@ for i in de.iter() {
 ```rust
 let path = "test_files/file_to_remove";
 let r = ext4.ext4_file_remove(&path);
+```
+
+### dir remove
+```rust
+let path = "dir_to_remove";
+// remove dir from root inode 2
+let r = ext4.ext4_dir_remove(2, &path);
 ```

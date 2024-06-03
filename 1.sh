@@ -14,18 +14,20 @@ mkdir tmp
 sudo mount ./ex4.img ./tmp/
 cd tmp
 sudo mkdir -p test_files
+mkdir -p dir_to_remove
 sudo cp ../test_files/* ./test_files/
+
 cd ../
 sudo umount tmp
 
-## run
-cargo run
+# ## run
+# cargo run
 
-## write check
-sudo mount ./ex4.img ./tmp/
-cd tmp
-ls
-cd test_files
-ls
-cd ../../
-sudo umount ./tmp
+# ## write check
+# sudo mount ./ex4.img ./tmp/
+# cd tmp
+# ls
+# cd test_files
+# ls
+# cd ../../
+# sudo umount ./tmp
