@@ -26,11 +26,11 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
     fn write_offset(&self, offset: usize, data: &[u8]);
 }
 
-impl dyn BlockDevice {
-    pub fn downcast_ref<T: BlockDevice>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref::<T>()
-    }
-}
+// impl dyn BlockDevice {
+//     pub fn downcast_ref<T: BlockDevice>(&self) -> Option<&T> {
+//         (self as &dyn Any).downcast_ref::<T>()
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Ext4 {
