@@ -1,4 +1,3 @@
-use byteorder::NetworkEndian;
 use log::error;
 
 use super::*;
