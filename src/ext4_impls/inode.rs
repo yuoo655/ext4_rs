@@ -32,19 +32,27 @@ impl Ext4 {
             inode: *inode,
         }
     }
+    
+    /// Get physical block id of a logical block.
+    /// 
+    /// Parms:
+    /// inode_ref: &Ext4InodeRef - inode reference
+    /// lblock: Ext4Lblk - logical block id
+    /// 
+    /// Returns:
+    /// Result<Ext4Fsblk> - physical block id
+    pub fn get_pblock_idx(&self, inode_ref: &Ext4InodeRef, lblock: Ext4Lblk) -> Result<Ext4Fsblk> {
+        let search_path = self.find_extent(&inode_ref, lblock);
+        if let Ok(path) = search_path {
+            // get the last path
+            let path = path.path.last().unwrap();
 
-    // pub fn find_block(&self, inode_ref: &Ext4InodeRef, iblock: &mut Ext4Lblk) -> Ext4Fsblk {
-    //     todo!()
-    // }
+            // get physical block id
+            let fblock = path.pblock;
 
-    // pub fn dir_find_entry(&self, parent: &mut Ext4InodeRef, name: &str) -> Result<Ext4DirEntry> {
-    //     let inode_size: u32 = parent.inode.size;
-    //     let total_blocks: u32 = inode_size / BLOCK_SIZE as u32;
+            return Ok(fblock);
+        }
 
-    //     let mut iblock = 0;
-    //     while iblock < total_blocks {
-    //         let fblock = self.find_block(&parent, &mut iblock);
-    //     }
-    //     return_errno_with_message!(Errno::ENOENT, "file not found");
-    // }
+        return_errno_with_message!(Errno::EIO, "search extent fail");
+    }
 }

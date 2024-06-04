@@ -19,6 +19,7 @@ pub(crate) use core::any::Any;
 pub(crate) use core::ffi::CStr;
 pub(crate) use core::fmt::Debug;
 pub(crate) use core::mem::size_of;
+pub(crate) use core::cmp::min;
 
 
 pub(crate) use bitflags::bitflags;
