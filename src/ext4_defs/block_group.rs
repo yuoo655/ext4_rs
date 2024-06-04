@@ -1,10 +1,8 @@
-use super::*;
-use crate::consts::*;
 use crate::prelude::*;
 use crate::utils::*;
-use crate::BLOCK_SIZE;
-use crate::BlockDevice;
-use core::mem::size_of;
+
+use super::*;
+
 
 /// Represents the structure of an Ext4 block group descriptor.
 #[derive(Debug, Default, Clone, Copy)]
@@ -36,16 +34,27 @@ pub struct Ext4BlockGroup {
     pub reserved: u32,                   // 填充
 }
 
-impl TryFrom<&[u8]> for Ext4BlockGroup {
-    type Error = u64;
-    fn try_from(data: &[u8]) -> core::result::Result<Self, u64> {
-        let data = &data[..size_of::<Ext4BlockGroup>()];
-        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+impl Ext4BlockGroup {
+    /// Load the block group descriptor from the disk.
+    pub fn load_new(
+        block_device: Arc<dyn BlockDevice>,
+        super_block: &Ext4Superblock,
+        block_group_idx: usize,
+    ) -> Self {
+        let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
+        let dsc_id = block_group_idx / dsc_cnt;
+        let first_data_block = super_block.first_data_block;
+        let block_id = first_data_block as usize + dsc_id + 1;
+        let offset = (block_group_idx % dsc_cnt) * super_block.desc_size as usize;
+
+        let ext4block = Block::load(block_device, block_id * BLOCK_SIZE);
+        let bg: Ext4BlockGroup = ext4block.read_offset_as(offset);
+
+        bg
     }
 }
 
 impl Ext4BlockGroup {
-
     /// Get the block number of the block bitmap for this block group.
     pub fn get_block_bitmap_block(&self, s: &Ext4Superblock) -> u64 {
         let mut v = self.block_bitmap_lo as u64;
@@ -85,7 +94,7 @@ impl Ext4BlockGroup {
     }
 
     /// Set the count of used directories in this block group.
-    pub fn set_used_dirs_count(&mut self, s: &Ext4Superblock, cnt: u32){
+    pub fn set_used_dirs_count(&mut self, s: &Ext4Superblock, cnt: u32) {
         self.itable_unused_lo = ((cnt << 16) >> 16) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.itable_unused_hi = (cnt >> 16) as u16;
@@ -117,28 +126,12 @@ impl Ext4BlockGroup {
     pub fn get_inode_table_blk_num(&self) -> u32 {
         ((self.inode_table_first_block_hi as u64) << 32) as u32 | self.inode_table_first_block_lo
     }
+}
 
-    /// Synchronize the block group data to disk.
-    pub fn sync_block_group_to_disk(
-        &self,
-        block_device: Arc<dyn BlockDevice>,
-        bgid: usize,
-        super_block: &Ext4Superblock,
-    ) {
-        let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
-        // let dsc_per_block = dsc_cnt;
-        let dsc_id = bgid / dsc_cnt;
-        // let first_meta_bg = super_block.first_meta_bg;
-        let first_data_block = super_block.first_data_block;
-        let block_id = first_data_block as usize + dsc_id + 1;
-        let offset = (bgid % dsc_cnt) * super_block.desc_size as usize;
 
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroup>())
-        };
-        block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
-    }
-
+/// sync block group to disk
+impl Ext4BlockGroup{
+    
     /// Calculate and return the checksum of the block group descriptor.
     #[allow(unused)]
     pub fn get_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
@@ -175,6 +168,28 @@ impl Ext4BlockGroup {
 
         crc
     }
+    
+    /// Synchronize the block group data to disk.
+    pub fn sync_block_group_to_disk(
+        &self,
+        block_device: Arc<dyn BlockDevice>,
+        bgid: usize,
+        super_block: &Ext4Superblock,
+    ) {
+        let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
+        // let dsc_per_block = dsc_cnt;
+        let dsc_id = bgid / dsc_cnt;
+        // let first_meta_bg = super_block.first_meta_bg;
+        let first_data_block = super_block.first_data_block;
+        let block_id = first_data_block as usize + dsc_id + 1;
+        let offset = (bgid % dsc_cnt) * super_block.desc_size as usize;
+
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroup>())
+        };
+        block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
+    }
+
 
     /// Set the checksum of the block group descriptor.
     pub fn set_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) {
@@ -191,105 +206,5 @@ impl Ext4BlockGroup {
     ) {
         self.set_block_group_checksum(bgid as u32, super_block);
         self.sync_block_group_to_disk(block_device, bgid, super_block)
-    }
-
-    /// Set the inode allocation bitmap checksum for this block group.
-    pub fn set_block_group_ialloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
-        let desc_size = s.desc_size();
-
-        let csum = ext4_ialloc_bitmap_csum(bitmap, s);
-        let lo_csum = (csum & 0xFFFF).to_le();
-        let hi_csum = (csum >> 16).to_le();
-
-        if (s.features_read_only & 0x400) >> 10 == 0 {
-            return;
-        }
-        self.inode_bitmap_csum_lo = lo_csum as u16;
-        if desc_size == EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE {
-            self.inode_bitmap_csum_hi = hi_csum as u16;
-        }
-    }
-
-    /// Set the block allocation bitmap checksum for this block group.
-    pub fn set_block_group_balloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
-        let desc_size = s.desc_size();
-
-        let csum = ext4_balloc_bitmap_csum(bitmap, s);
-        let lo_csum = (csum & 0xFFFF).to_le();
-        let hi_csum = (csum >> 16).to_le();
-
-        if (s.features_read_only & 0x400) >> 10 == 0 {
-            return;
-        }
-        self.block_bitmap_csum_lo = lo_csum as u16;
-        if desc_size == EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE {
-            self.block_bitmap_csum_hi = hi_csum as u16;
-        }
-    }
-
-    /// Get the count of free blocks in this block group.
-    pub fn get_free_blocks_count(&self) -> u64 {
-        let mut v = self.free_blocks_count_lo as u64;
-        if self.free_blocks_count_hi != 0 {
-            v |= (self.free_blocks_count_hi as u64) << 32;
-        }
-        v
-    }
-    
-    /// Set the count of free blocks in this block group.
-    pub fn set_free_blocks_count(&mut self, cnt: u32) {
-        self.free_blocks_count_lo = ((cnt << 16) >> 16) as u16;
-        self.free_blocks_count_hi = (cnt >> 16) as u16;
-    }
-
-    pub fn ext4_blocks_in_group_cnt(&self, s: &Ext4Superblock) -> u32{
-        let blocks_count = s.blocks_count();
-        let blocks_per_group = s.blocks_per_group();
-        let mut block_groups_count = s.block_groups_count();
-
-        if (blocks_count % blocks_per_group) != 0  {
-            block_groups_count += 1;
-        }
-        block_groups_count
-    }
-}
-
-impl Ext4BlockGroup {
-    /// Load the block group descriptor from the disk.
-    pub fn load(
-        block_device: Arc<dyn BlockDevice>,
-        super_block: &Ext4Superblock,
-        block_group_idx: usize,
-        // fs: Weak<Ext4>,
-    ) -> core::result::Result<Self, u64> {
-        let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
-        let dsc_id = block_group_idx / dsc_cnt;
-        let first_data_block = super_block.first_data_block;
-
-        let block_id = first_data_block as usize + dsc_id + 1;
-        let offset = (block_group_idx % dsc_cnt) * super_block.desc_size as usize;
-
-        let data = block_device.read_offset(block_id * BLOCK_SIZE);
-
-        let block_group_data =
-            &data[offset as usize..offset as usize + size_of::<Ext4BlockGroup>()];
-
-        let bg = Ext4BlockGroup::try_from(block_group_data);
-
-        bg
-    }
-}
-
-
-/// Calculate the count of inodes in a block group.
-pub fn ext4_inodes_in_group_cnt(bgid: u32, s: &Ext4Superblock) -> u32 {
-    let block_group_count = s.block_groups_count();
-    let inodes_per_group = s.inodes_per_group;
-    let total_inodes = ((s.inodes_count as u64) << 32) as u32;
-
-    if bgid < block_group_count - 1 {
-        inodes_per_group
-    } else {
-        total_inodes - ((block_group_count - 1) * inodes_per_group)
     }
 }
