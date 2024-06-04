@@ -8,6 +8,11 @@ pub type Ext4Fsblk = u64;
 pub const EOK: usize = 0;
 
 /// Inode
+pub const ROOT_INODE: u32 = 2;                      // 根目录 inode
+pub const JOURNAL_INODE: u32 = 8;                   // 日志文件 inode
+pub const UNDEL_DIR_INODE: u32 = 6;                 // 未删除目录 inode
+pub const LOST_AND_FOUND_INODE: u32 = 11;           // lost+found 目录 inode
+
 pub const EXT4_INODE_MODE_FILE: usize = 0x8000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 = 0xF000;
 

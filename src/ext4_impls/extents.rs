@@ -49,7 +49,7 @@ impl Ext4 {
                 index: None,
                 extent: Some(extent),
                 position: pos,
-                pblock: 0, // No pblock for root node
+                pblock:extent.start_pblock(),
             });
             search_path.depth = node.header.depth;
             search_path.maxdepth = node.header.depth;
