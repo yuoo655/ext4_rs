@@ -69,10 +69,11 @@ impl Ext4 {
 
                 current_inode_ref = new_inode_ref;
                 parent = current_inode_ref.inode_num;
-
+                
                 continue;
             }
 
+            parent = dir_search_result.dentry.inode;
 
             if is_goal {
                 break;
