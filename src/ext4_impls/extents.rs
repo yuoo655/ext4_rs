@@ -234,6 +234,9 @@ impl Ext4 {
             // Node is empty (no extents)
             if header.entries_count == 0 {
                 *inode_ref.inode.root_extent_mut_at(node.position) = *new_extent;
+                (*inode_ref.inode.root_extent_header_mut()).entries_count += 1;
+                
+                self.write_back_inode(inode_ref);
 
                 return Ok(());
             }
