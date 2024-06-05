@@ -14,13 +14,11 @@ mod ext4_impls;
 mod fuse_interface;
 mod simple_interface;
 
+use ext4_defs::*;
 use fuse_interface::*;
 use simple_interface::*;
-use ext4_defs::*;
 
 use log::{Level, LevelFilter, Metadata, Record};
-
-
 
 macro_rules! with_color {
     ($color_code:expr, $($arg:tt)*) => {{
@@ -102,12 +100,26 @@ impl BlockDevice for Disk {
 
 fn main() {
     log::set_logger(&SimpleLogger).unwrap();
-    log::set_max_level(LevelFilter::Info);
+    log::set_max_level(LevelFilter::Trace);
     let disk = Arc::new(Disk {});
     let ext4 = Ext4::open(disk);
 
-    let entries = ext4.dir_get_entries(ROOT_INODE);
-    for entry in entries {
-        log::info!("entry: {:?}", entry.get_name());
+
+    
+    // dir
+    log::info!("----mkdir----");
+    for i in 0..10 {
+        let path = format!("dirtest{}", i);
+        let path = path.as_str();
+        log::info!("mkdir making {:?}", path);
+        let r = ext4.dir_mk(&path);
+        assert!(r.is_ok(), "dir make error {:?}", r.err());
     }
+
+
+    let path = "dir1/dir2/dir3/dir4/dir5/dir6";
+    log::info!("mkdir making {:?}", path);
+    let r = ext4.dir_mk(&path);
+    assert!(r.is_ok(), "dir make error {:?}", r.err());
+
 }
