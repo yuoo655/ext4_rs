@@ -72,7 +72,7 @@ impl Ext4 {
 
                 continue;
             }
-            
+
 
             if is_goal {
                 break;
@@ -93,5 +93,20 @@ impl Ext4 {
         let filetype = InodeFileType::S_IFDIR;
         let r = self.generic_open(path, ROOT_INODE, true, filetype.bits(), &mut nameoff);
         r
+    }
+
+    pub fn unlink(
+        &self,
+        parent: &mut Ext4InodeRef,
+        child: &mut Ext4InodeRef,
+        name: &str,
+    ) -> Result<usize> {
+        self.dir_remove_entry(parent, name)?;
+
+        let is_dir = child.inode.is_dir();
+
+        self.ialloc_free_inode(child.inode_num, is_dir);
+
+        Ok(EOK)
     }
 }
