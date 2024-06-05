@@ -2,6 +2,7 @@ use crate::prelude::*;
 
 use crate::ext4_defs::*;
 use crate::return_errno;
+use crate::return_errno_with_message;
 
 /// fuser interface for ext4
 impl Ext4 {
@@ -102,7 +103,20 @@ impl Ext4 {
     }
 
     /// Create a directory.
-    fn fuse_mkdir(&mut self, parent: u64, name: &str, mode: u32, umask: u32) {}
+    fn fuse_mkdir(&mut self, parent: u64, name: &str, mode: u32, umask: u32)-> Result<usize> {
+        let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+        let r = self.dir_find_entry(parent as u32, name, &mut search_result);
+        if r.is_ok() {
+            return_errno!(Errno::EEXIST);
+        }
+        let file_type = InodeFileType::from_bits(mode as u16).unwrap();
+        if file_type != InodeFileType::S_IFDIR {
+            // The mode is not a directory
+            return_errno_with_message!(Errno::EINVAL, "Invalid mode for directory creation");
+        }
+        let inode_ref = self.create(parent as u32, name, mode as u16)?;
+        Ok(EOK)
+    }
 
     /// Remove a file.
     fn fuse_unlink(&mut self, parent: u64, name: &str) {}
