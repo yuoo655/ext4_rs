@@ -60,7 +60,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     pub struct InodePerm: u16 {
         const S_IREAD = 0x0100;
         const S_IWRITE = 0x0080;
@@ -288,11 +288,11 @@ impl Ext4Inode {
 
 impl Ext4Inode {
     pub fn file_type(&self) -> InodeFileType {
-        InodeFileType::from_bits_truncate(self.mode)
+        InodeFileType::from_bits_truncate(self.mode & EXT4_INODE_MODE_TYPE_MASK)
     }
 
     pub fn file_perm(&self) -> InodePerm {
-        InodePerm::from_bits_truncate(self.mode & 0x0FFF)
+        InodePerm::from_bits_truncate(self.mode & EXT4_INODE_MODE_PERM_MASK)
     }
 
     pub fn is_dir(&self) -> bool {
@@ -320,11 +320,11 @@ impl Ext4Inode {
     }
 
     pub fn set_file_type(&mut self, kind: InodeFileType) {
-        self.mode = (self.mode & !0xF000) | (kind.bits());
+        self.mode |= kind.bits();
     }
 
-    pub fn set_file_perm(&mut self, perm: u16) {
-        self.mode = (self.mode & 0xF000) | (perm & 0x0FFF);
+    pub fn set_file_perm(&mut self, perm: InodePerm) {
+        self.mode |= perm.bits();
     }
 }
 

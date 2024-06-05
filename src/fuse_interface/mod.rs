@@ -58,23 +58,56 @@ impl Ext4 {
         flags: Option<u32>,
     ) {
         let mut inode_ref = self.get_inode_ref(ino as u32);
-        let attr = FileAttr {
-            ino,
-            size: inode_ref.inode.size(),
-            blocks: inode_ref.inode.blocks as u64,
-            atime: inode_ref.inode.atime,
-            mtime: inode_ref.inode.mtime,
-            ctime: inode_ref.inode.ctime,
-            crtime: inode_ref.inode.i_crtime,
-            kind: inode_ref.inode.file_type(),
-            perm: inode_ref.inode.mode & 0x0FFF,
-            nlink: inode_ref.inode.links_count as u32,
-            uid: inode_ref.inode.uid as u32,
-            gid: inode_ref.inode.gid as u32,
-            rdev: inode_ref.inode.faddr,
-            blksize: BLOCK_SIZE as u32,
-            flags: inode_ref.inode.flags,
-        };
+        
+        let mut attr = FileAttr::default();
+
+        if let Some(mode) = mode {
+            let inode_file_type =
+                InodeFileType::from_bits(mode as u16 & EXT4_INODE_MODE_TYPE_MASK).unwrap();
+            attr.kind = inode_file_type;
+            let inode_perm = InodePerm::from_bits(mode as u16 & EXT4_INODE_MODE_PERM_MASK).unwrap();
+            attr.perm = inode_perm;
+        }
+
+        if let Some(uid) = uid {
+            attr.uid = uid
+        }
+
+        if let Some(gid) = gid {
+            attr.gid = gid
+        }
+
+        if let Some(size) = size {
+            attr.size = size
+        }
+
+        if let Some(atime) = atime {
+            attr.atime = atime
+        }
+
+        if let Some(mtime) = mtime {
+            attr.mtime = mtime
+        }
+
+        if let Some(ctime) = ctime {
+            attr.ctime = ctime
+        }
+
+        if let Some(crtime) = crtime {
+            attr.crtime = crtime
+        }
+
+        if let Some(chgtime) = chgtime {
+            attr.chgtime = chgtime
+        }
+
+        if let Some(bkuptime) = bkuptime {
+            attr.bkuptime = bkuptime
+        }
+
+        if let Some(flags) = flags {
+            attr.flags = flags
+        }
 
         inode_ref.set_attr(&attr);
 

@@ -14,6 +14,7 @@ pub const UNDEL_DIR_INODE: u32 = 6;                 // 未删除目录 inode
 pub const LOST_AND_FOUND_INODE: u32 = 11;           // lost+found 目录 inode
 pub const EXT4_INODE_MODE_FILE: usize = 0x8000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 = 0xF000;
+pub const EXT4_INODE_MODE_PERM_MASK: u16 = 0x0FFF;
 pub const EXT4_INODE_BLOCK_SIZE: usize = 512;
 pub const EXT4_GOOD_OLD_INODE_SIZE: u16 = 128;
 pub const EXT4_INODE_FLAG_EXTENTS: usize = 0x00080000; /* Inode uses extents */
