@@ -58,7 +58,7 @@ impl Ext4 {
         flags: Option<u32>,
     ) {
         let mut inode_ref = self.get_inode_ref(ino as u32);
-        
+
         let mut attr = FileAttr::default();
 
         if let Some(mode) = mode {
@@ -188,8 +188,8 @@ impl Ext4 {
     /// ino: the inode number of the source file
     /// newparent: the inode number of the new parent directory
     /// newname: the name of the new file
-    /// 
-    /// 
+    ///
+    ///
     fn fuse_link(&mut self, ino: u64, newparent: u64, newname: &str) -> Result<usize> {
         let mut parent_inode_ref = self.get_inode_ref(newparent as u32);
         let mut child_inode_ref = self.get_inode_ref(ino as u32);
@@ -208,7 +208,7 @@ impl Ext4 {
     /// anything in fh. There are also some flags (direct_io, keep_cache) which the
     /// filesystem may set, to change the way the file is opened. See fuse_file_info
     /// structure in <fuse_common.h> for more details.
-    fn fuse_open(&mut self, ino: u64, flags: i32) -> Result<usize>{
+    fn fuse_open(&mut self, ino: u64, flags: i32) -> Result<usize> {
         let inode_ref = self.get_inode_ref(ino as u32);
 
         // check permission
@@ -218,7 +218,7 @@ impl Ext4 {
         let can_read = file_perm.contains(InodePerm::S_IREAD);
         let can_write = file_perm.contains(InodePerm::S_IWRITE);
         let can_execute = file_perm.contains(InodePerm::S_IEXEC);
-        
+
         // If trying to open the file in write mode, check for write permissions
         if (flags & O_WRONLY != 0) || (flags & O_RDWR != 0) {
             if !can_write {
@@ -255,14 +255,17 @@ impl Ext4 {
     /// lock_owner: only supported with ABI >= 7.9
     fn fuse_read(
         &mut self,
-
         ino: u64,
         fh: u64,
         offset: i64,
         size: u32,
         flags: i32,
         lock_owner: Option<u64>,
-    ) {
+    ) -> Result<Vec<u8>> {
+        let mut data = vec![0u8; size as usize];
+        let read_size = self.read_at(ino as u32, offset as usize, &mut data)?;
+
+        Ok(data)
     }
 
     /// Write data.
