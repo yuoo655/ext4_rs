@@ -282,7 +282,6 @@ impl Ext4 {
     /// lock_owner: only supported with ABI >= 7.9
     fn fuse_write(
         &mut self,
-
         ino: u64,
         fh: u64,
         offset: i64,
@@ -290,7 +289,9 @@ impl Ext4 {
         write_flags: u32,
         flags: i32,
         lock_owner: Option<u64>,
-    ) {
+    ) ->Result<usize>{
+        let write_size = self.write_at(ino as u32, offset as usize, data)?;
+        Ok(write_size)
     }
 
     /// Flush method.
