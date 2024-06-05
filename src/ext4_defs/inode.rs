@@ -47,7 +47,7 @@ pub struct Linux2 {
 }
 
 bitflags! {
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     pub struct InodeFileType: u16 {
         const S_IFIFO = 0x1000;
         const S_IFCHR = 0x2000;
@@ -318,6 +318,14 @@ impl Ext4Inode {
     pub fn can_exec(&self) -> bool {
         self.file_perm().contains(InodePerm::S_IEXEC)
     }
+
+    pub fn set_file_type(&mut self, kind: InodeFileType) {
+        self.mode = (self.mode & !0xF000) | (kind.bits());
+    }
+
+    pub fn set_file_perm(&mut self, perm: u16) {
+        self.mode = (self.mode & 0xF000) | (perm & 0x0FFF);
+    }
 }
 
 /// Reference to an inode.
@@ -440,5 +448,23 @@ impl Ext4Inode {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
         };
         block_device.write_offset(inode_pos, data);
+    }
+}
+
+impl Ext4InodeRef {
+    pub fn set_attr(&mut self, attr: &FileAttr) {
+        self.inode.set_size(attr.size);
+        self.inode.set_blocks_count(attr.blocks);
+        self.inode.set_atime(attr.atime);
+        self.inode.set_mtime(attr.mtime);
+        self.inode.set_ctime(attr.ctime);
+        self.inode.set_i_crtime(attr.crtime);
+        self.inode.set_file_type(attr.kind);
+        self.inode.set_file_perm(attr.perm);
+        self.inode.set_links_count(attr.nlink as u16);
+        self.inode.set_uid(attr.uid as u16);
+        self.inode.set_gid(attr.gid as u16);
+        self.inode.set_faddr(attr.rdev);
+        self.inode.set_flags(attr.flags);
     }
 }

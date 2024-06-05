@@ -32,7 +32,7 @@ impl Ext4 {
     }
 
     /// Get file attributes.
-    pub fn fuse_getattr(&self, ino: u64) -> Result<FileAttr>{
+    pub fn fuse_getattr(&self, ino: u64) -> Result<FileAttr> {
         let inode_ref = self.get_inode_ref(ino as u32);
         let file_attr = FileAttr::from_inode_ref(&inode_ref);
         Ok(file_attr)
@@ -55,7 +55,28 @@ impl Ext4 {
         bkuptime: Option<u32>,
         flags: Option<u32>,
     ) {
-        unimplemented!()
+        let mut inode_ref = self.get_inode_ref(ino as u32);
+        let attr = FileAttr {
+            ino,
+            size: inode_ref.inode.size(),
+            blocks: inode_ref.inode.blocks as u64,
+            atime: inode_ref.inode.atime,
+            mtime: inode_ref.inode.mtime,
+            ctime: inode_ref.inode.ctime,
+            crtime: inode_ref.inode.i_crtime,
+            kind: inode_ref.inode.file_type(),
+            perm: inode_ref.inode.mode & 0x0FFF,
+            nlink: inode_ref.inode.links_count as u32,
+            uid: inode_ref.inode.uid as u32,
+            gid: inode_ref.inode.gid as u32,
+            rdev: inode_ref.inode.faddr,
+            blksize: BLOCK_SIZE as u32,
+            flags: inode_ref.inode.flags,
+        };
+
+        inode_ref.set_attr(&attr);
+
+        self.write_back_inode(&mut inode_ref);
     }
 
     /// Read symbolic link.
