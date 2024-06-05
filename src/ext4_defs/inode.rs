@@ -288,7 +288,7 @@ impl Ext4Inode {
 
 impl Ext4Inode {
     pub fn file_type(&self) -> InodeFileType {
-        InodeFileType::from_bits_truncate(self.mode & 0xF000)
+        InodeFileType::from_bits_truncate(self.mode)
     }
 
     pub fn inode_attr(&self) -> InodeAttr {
@@ -328,9 +328,24 @@ pub struct Ext4InodeRef {
 }
 
 impl Ext4Inode {
+    pub fn root_extent_header(&self) -> &Ext4ExtentHeader{
+        let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
+        unsafe{&*header_ptr}
+    }
+
+    pub fn root_extent_header_mut(&mut self) -> &mut Ext4ExtentHeader{
+        let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
+        unsafe{&mut*header_ptr}
+    }
+
     pub fn root_extent_mut_at(&mut self, pos: usize) -> &mut Ext4Extent{
         let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
         unsafe { &mut *(header_ptr.add(1) as *mut Ext4Extent).add(pos) }
+    }
+
+    pub fn root_extent_at(&mut self, pos: usize) -> &Ext4Extent{
+        let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
+        unsafe { & *(header_ptr.add(1) as *const Ext4Extent).add(pos) }
     }
 
     pub fn extent_tree_init(&mut self) {
