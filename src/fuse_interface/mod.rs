@@ -337,8 +337,7 @@ impl Ext4 {
     /// anything in fh, though that makes it impossible to implement standard conforming
     /// directory stream operations in case the contents of the directory can change
     /// between opendir and releasedir.
-    fn fuse_opendir(&mut self, ino: u64, flags: i32) -> Result<usize>{
-
+    fn fuse_opendir(&mut self, ino: u64, flags: i32) -> Result<usize> {
         let inode_ref = self.get_inode_ref(ino as u32);
 
         // 检查是否为目录
@@ -361,7 +360,7 @@ impl Ext4 {
     /// requested size. Send an empty buffer on end of stream. fh will contain the
     /// value set by the opendir method, or will be undefined if the opendir method
     /// didn't set any value.
-    fn fuse_readdir(&mut self, ino: u64, fh: u64, offset: i64) -> Result<Vec<Ext4DirEntry>>{
+    fn fuse_readdir(&mut self, ino: u64, fh: u64, offset: i64) -> Result<Vec<Ext4DirEntry>> {
         let mut entries = self.dir_get_entries(ino as u32);
         entries = entries[offset as usize..].to_vec();
         Ok(entries)
@@ -423,7 +422,56 @@ impl Ext4 {
     /// structure in <fuse_common.h> for more details. If this method is not
     /// implemented or under Linux kernel versions earlier than 2.6.15, the mknod()
     /// and open() methods will be called instead.
-    fn fuse_create(&mut self, parent: u64, name: &str, mode: u32, umask: u32, flags: i32) {}
+    fn fuse_create(
+        &mut self,
+        parent: u64,
+        name: &str,
+        mode: u32,
+        umask: u32,
+        flags: i32,
+    ) -> Result<usize> {
+        // check file exist
+        let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+        let r = self.dir_find_entry(parent as u32, name, &mut search_result);
+        if r.is_ok() {
+            let inode_ref = self.get_inode_ref(search_result.dentry.inode);
+
+            // check permission
+            let file_perm = inode_ref.inode.file_perm();
+
+            let can_read = file_perm.contains(InodePerm::S_IREAD);
+            let can_write = file_perm.contains(InodePerm::S_IWRITE);
+            let can_execute = file_perm.contains(InodePerm::S_IEXEC);
+
+            // If trying to open the file in write mode, check for write permissions
+            if (flags & O_WRONLY != 0) || (flags & O_RDWR != 0) {
+                if !can_write {
+                    return_errno_with_message!(Errno::EACCES, "Permission denied can not write");
+                }
+            }
+
+            // If trying to open the file in read mode, check for read permissions
+            if (flags & O_RDONLY != 0) || (flags & O_RDWR != 0) {
+                if !can_read {
+                    return_errno_with_message!(Errno::EACCES, "Permission denied can not read");
+                }
+            }
+
+            // If trying to open the file in read mode, check for read permissions
+            if (flags & O_EXCL != 0) || (flags & O_RDWR != 0) {
+                if !can_execute {
+                    return_errno_with_message!(Errno::EACCES, "Permission denied can not exec");
+                }
+            }
+
+            return Ok(EOK);
+        } else {
+            //create file
+            let inode_ref = self.create(parent as u32, name, mode as u16)?;
+        }
+
+        Ok(EOK)
+    }
 
     /// Test for a POSIX file lock.
     fn fuse_getlk(
