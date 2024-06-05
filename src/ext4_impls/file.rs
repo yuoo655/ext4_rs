@@ -328,4 +328,57 @@ impl Ext4 {
 
         Ok(written)
     }
+
+    /// File remove
+    ///
+    /// Params:
+    /// path: file path start from root
+    ///
+    /// Returns:
+    /// Result<usize> - status of the operation
+    pub fn file_remove(&self, path: &str) -> Result<usize> {
+        let mut parent_inode_num = ROOT_INODE;
+
+        let mut nameoff = 0;
+        let child_inode = self.generic_open(path, parent_inode_num, false, 0, &mut nameoff)?;
+
+        let mut child_inode_ref = self.get_inode_ref(child_inode);
+
+        let child_link_cnt = child_inode_ref.inode.links_count();
+        if child_link_cnt == 0 {}
+
+        Ok(EOK)
+    }
+
+    /// File truncate
+    /// 
+    /// Params:
+    /// inode_ref: &mut Ext4InodeRef - inode reference
+    /// new_size: u64 - new size of the file
+    /// 
+    /// Returns:
+    /// Result<usize> - status of the operation
+    pub fn truncate_inode(&self, inode_ref: &mut Ext4InodeRef, new_size: u64) -> Result<usize> {
+        let old_size = inode_ref.inode.size();
+
+        assert!(old_size > new_size);
+
+        if old_size == new_size {
+            return Ok(EOK);
+        }
+
+        let block_size = BLOCK_SIZE as u64;
+        let new_blocks_cnt = ((new_size + block_size - 1) / block_size) as u32;
+        let old_blocks_cnt = ((old_size + block_size - 1) / block_size) as u32;
+        let diff_blocks_cnt = old_blocks_cnt - new_blocks_cnt;
+
+        if diff_blocks_cnt > 0{
+            // self.extent_remove_space(inode_ref, new_blocks_cnt, EXT_MAX_BLOCKS as u32)?;
+        }
+
+        inode_ref.inode.set_size(new_size);
+        self.write_back_inode(inode_ref);
+
+        Ok(EOK)
+    }
 }
