@@ -5,14 +5,14 @@ use crate::ext4_defs::*;
 
 impl Ext4 {
     /// Find an extent in the extent tree.
-    /// 
+    ///
     /// Parms:
     /// inode_ref: &Ext4InodeRef - inode reference
     /// lblock: Ext4Lblk - logical block id
-    /// 
+    ///
     /// Returns:
     /// Result<SearchPath> - search path
-    /// 
+    ///
     /// 如果 depth > 0，则查找extent_index，查找目标 lblock 对应的 extent。
     /// 如果 depth = 0，则直接在root节点中查找 extent，查找目标 lblock 对应的 extent。
     pub fn find_extent(&self, inode_ref: &Ext4InodeRef, lblock: Ext4Lblk) -> Result<SearchPath> {
@@ -58,7 +58,7 @@ impl Ext4 {
                 index: None,
                 extent: Some(extent),
                 position: pos,
-                pblock:extent.start_pblock(),
+                pblock: extent.get_pblock(),
             });
             search_path.depth = node.header.depth;
             search_path.maxdepth = node.header.depth;
@@ -70,7 +70,11 @@ impl Ext4 {
     }
 
     /// Insert an extent into the extent tree.
-    fn insert_extent(&self, inode_ref: &mut Ext4InodeRef, newex: &mut Ext4Extent) -> Result<()> {
+    pub fn insert_extent(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        newex: &mut Ext4Extent,
+    ) -> Result<()> {
         let newex_first_block = newex.first_block;
 
         let mut search_path = self.find_extent(inode_ref, newex_first_block)?;
@@ -79,6 +83,13 @@ impl Ext4 {
         let node = &mut search_path.path[depth]; // Get the node at the current depth
 
         let header = node.header.clone();
+
+        // Node is empty (no extents)
+        if header.entries_count == 0 {
+            // If the node is empty, insert the new extent directly
+            self.insert_new_extent(inode_ref,&mut search_path, newex)?;
+            return Ok(());
+        }
 
         // Insert to exsiting extent
         if let Some(mut ex) = node.extent.clone() {
@@ -141,7 +152,7 @@ impl Ext4 {
         // insert:   |<---ext1--->|<---ext2--->|<---newex--->|
         //           10           20           30           35
         if header.entries_count < header.max_entries_count {
-            self.insert_new_extent(&mut search_path, newex)?;
+            self.insert_new_extent(inode_ref, &mut search_path, newex)?;
         } else {
             // Create a new leaf node
             self.create_new_leaf(inode_ref, &mut search_path, newex)?;
@@ -182,12 +193,7 @@ impl Ext4 {
             return false;
         }
 
-        // Check if the physical blocks are contiguous
-        if ex1.start_pblock() + ex1.block_count as u64 == ex2.start_pblock() {
-            return true;
-        }
-
-        false
+        true
     }
 
     fn merge_extent(
@@ -215,11 +221,32 @@ impl Ext4 {
 
     fn insert_new_extent(
         &self,
+        inode_ref: &mut Ext4InodeRef,
         search_path: &mut SearchPath,
         new_extent: &mut Ext4Extent,
     ) -> Result<()> {
-        // Implement logic to insert a new extent
-        unimplemented!()
+        let depth = search_path.depth as usize;
+        let node = &mut search_path.path[depth]; // Get the node at the current depth
+        let header = node.header.clone();
+
+        // insert at root
+        if depth == 0 {
+            // Node is empty (no extents)
+            if header.entries_count == 0 {
+                *inode_ref.inode.root_extent_mut_at(node.position) = *new_extent;
+
+                return Ok(());
+            }
+            // Not empty, insert at search result pos + 1
+            *inode_ref.inode.root_extent_mut_at(node.position + 1) = *new_extent;
+            return Ok(());
+        }
+
+
+        // insert at pblock
+
+
+        return_errno_with_message!(Errno::ENOTSUP, "Not supported insert extent at nonroot");
     }
 
     fn create_new_leaf(
