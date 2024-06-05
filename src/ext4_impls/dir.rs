@@ -324,6 +324,31 @@ impl Ext4 {
         let tail = Ext4DirEntryTail::new();
         tail.copy_to_slice(&mut block.data);
     }
+
+    pub fn dir_remove_entry(&self, parent: &mut Ext4InodeRef, path: &str) -> Result<usize> {
+        // get remove_entry pos in parent and its prev entry
+        let mut result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+
+        let r = self.dir_find_entry(parent.inode_num, path, &mut result)?;
+
+        let mut ext4block = Block::load(self.block_device.clone(), result.pblock_id * BLOCK_SIZE);
+
+        let de_del_entry_len = result.dentry.entry_len();
+
+        // prev entry
+        let pde: &mut Ext4DirEntry = ext4block.read_offset_as_mut(result.prev_offset);
+
+        (*pde).entry_len += de_del_entry_len;
+
+        let de_del: &mut Ext4DirEntry = ext4block.read_offset_as_mut(result.offset);
+
+        (*de_del).inode = 0;
+
+        self.dir_set_csum(&mut ext4block, parent.inode.generation());
+        ext4block.sync_blk_to_disk(self.block_device.clone());
+
+        Ok(EOK)
+    }
 }
 
 pub fn copy_dir_entry_to_array(header: &Ext4DirEntry, array: &mut [u8], offset: usize) {
