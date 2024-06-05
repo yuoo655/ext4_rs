@@ -184,7 +184,21 @@ impl Ext4 {
     fn fuse_rename(&mut self, parent: u64, name: &str, newparent: u64, newname: &str, flags: u32) {}
 
     /// Create a hard link.
-    fn fuse_link(&mut self, ino: u64, newparent: u64, newname: &str) {}
+    /// Params:
+    /// ino: the inode number of the source file
+    /// newparent: the inode number of the new parent directory
+    /// newname: the name of the new file
+    /// 
+    /// 
+    fn fuse_link(&mut self, ino: u64, newparent: u64, newname: &str) -> Result<usize> {
+        let mut parent_inode_ref = self.get_inode_ref(newparent as u32);
+        let mut child_inode_ref = self.get_inode_ref(ino as u32);
+
+        // to do if child already exists we should not add . and .. in child directory
+        self.link(&mut parent_inode_ref, &mut child_inode_ref, newname)?;
+
+        Ok(EOK)
+    }
 
     /// Open a file.
     /// Open flags (with the exception of O_CREAT, O_EXCL, O_NOCTTY and O_TRUNC) are
