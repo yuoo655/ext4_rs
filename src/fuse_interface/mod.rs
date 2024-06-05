@@ -32,7 +32,11 @@ impl Ext4 {
     }
 
     /// Get file attributes.
-    pub fn fuse_getattr(&self, ino: u64) {}
+    pub fn fuse_getattr(&self, ino: u64) -> Result<FileAttr>{
+        let inode_ref = self.get_inode_ref(ino as u32);
+        let file_attr = FileAttr::from_inode_ref(&inode_ref);
+        Ok(file_attr)
+    }
 
     /// Set file attributes.
     pub fn fuse_setattr(
