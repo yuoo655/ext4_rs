@@ -24,7 +24,7 @@ impl Ext4 {
         create: bool,
         ftype: u16,
         name_off: &mut u32,
-    ) -> Result<usize> {
+    ) -> Result<u32> {
         let mut is_goal = false;
 
         let mut parent = parent_inode_num;
@@ -81,9 +81,10 @@ impl Ext4 {
         }
 
         if is_goal {
-            return Ok(EOK);
+            return Ok(dir_search_result.dentry.inode);
         }
-        Ok(EOK)
+
+        Ok(dir_search_result.dentry.inode)
     }
 
     #[allow(unused)]
@@ -92,7 +93,7 @@ impl Ext4 {
 
         let filetype = InodeFileType::S_IFDIR;
         let r = self.generic_open(path, ROOT_INODE, true, filetype.bits(), &mut nameoff);
-        r
+        Ok(EOK)
     }
 
     pub fn unlink(
