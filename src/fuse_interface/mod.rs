@@ -80,7 +80,13 @@ impl Ext4 {
     }
 
     /// Read symbolic link.
-    fn fuse_readlink(&mut self, ino: u64) {}
+    fn fuse_readlink(&mut self, ino: u64) -> Result<Vec<u8>> {
+        let inode_ref = self.get_inode_ref(ino as u32);
+        let file_size = inode_ref.inode.size();
+        let mut read_buf = vec![0; file_size as usize];
+        let read_size = self.read_at(ino as u32, 0, &mut read_buf)?;
+        Ok(read_buf)
+    }
 
     /// Create file node.
     /// Create a regular file, character device, block device, fifo or socket node.
