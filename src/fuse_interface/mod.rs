@@ -208,7 +208,40 @@ impl Ext4 {
     /// anything in fh. There are also some flags (direct_io, keep_cache) which the
     /// filesystem may set, to change the way the file is opened. See fuse_file_info
     /// structure in <fuse_common.h> for more details.
-    fn fuse_open(&mut self, _ino: u64, _flags: i32) {}
+    fn fuse_open(&mut self, ino: u64, flags: i32) -> Result<usize>{
+        let inode_ref = self.get_inode_ref(ino as u32);
+
+        // check permission
+        let file_type = inode_ref.inode.file_type();
+        let file_perm = inode_ref.inode.file_perm();
+
+        let can_read = file_perm.contains(InodePerm::S_IREAD);
+        let can_write = file_perm.contains(InodePerm::S_IWRITE);
+        let can_execute = file_perm.contains(InodePerm::S_IEXEC);
+        
+        // If trying to open the file in write mode, check for write permissions
+        if (flags & O_WRONLY != 0) || (flags & O_RDWR != 0) {
+            if !can_write {
+                return_errno_with_message!(Errno::EACCES, "Permission denied can not write");
+            }
+        }
+
+        // If trying to open the file in read mode, check for read permissions
+        if (flags & O_RDONLY != 0) || (flags & O_RDWR != 0) {
+            if !can_read {
+                return_errno_with_message!(Errno::EACCES, "Permission denied can not read");
+            }
+        }
+
+        // If trying to open the file in read mode, check for read permissions
+        if (flags & O_EXCL != 0) || (flags & O_RDWR != 0) {
+            if !can_execute {
+                return_errno_with_message!(Errno::EACCES, "Permission denied can not exec");
+            }
+        }
+
+        Ok(EOK)
+    }
 
     /// Read data.
     /// Read should send exactly the number of bytes requested except on EOF or error,

@@ -32,3 +32,26 @@ pub const EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE: u16 = 64;
 /// SuperBlock
 pub const SUPERBLOCK_OFFSET: usize = 1024;
 pub const EXT4_SUPERBLOCK_OS_HURD: u32 = 1;
+
+/// File
+/// libc file open flags
+pub const O_ACCMODE: i32 = 0o0003;
+pub const O_RDONLY: i32 = 0o00;
+pub const O_WRONLY: i32 = 0o01;
+pub const O_RDWR: i32 = 0o02;
+pub const O_CREAT: i32 = 0o0100;
+pub const O_EXCL: i32 = 0o0200;
+pub const O_NOCTTY: i32 = 0o0400;
+pub const O_TRUNC: i32 = 0o01000;
+pub const O_APPEND: i32 = 0o02000;
+pub const O_NONBLOCK: i32 = 0o04000;
+pub const O_SYNC: i32 = 0o4010000;
+pub const O_ASYNC: i32 = 0o020000;
+pub const O_LARGEFILE: i32 = 0o0100000;
+pub const O_DIRECTORY: i32 = 0o0200000;
+pub const O_NOFOLLOW: i32 = 0o0400000;
+pub const O_CLOEXEC: i32 = 0o2000000;
+pub const O_DIRECT: i32 = 0o040000;
+pub const O_NOATIME: i32 = 0o1000000;
+pub const O_PATH: i32 = 0o10000000;
+pub const O_DSYNC: i32 = 0o010000;
