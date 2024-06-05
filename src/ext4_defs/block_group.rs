@@ -3,7 +3,6 @@ use crate::utils::*;
 
 use super::*;
 
-
 /// Represents the structure of an Ext4 block group descriptor.
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
@@ -128,10 +127,8 @@ impl Ext4BlockGroup {
     }
 }
 
-
 /// sync block group to disk
-impl Ext4BlockGroup{
-    
+impl Ext4BlockGroup {
     /// Calculate and return the checksum of the block group descriptor.
     #[allow(unused)]
     pub fn get_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) -> u16 {
@@ -168,7 +165,7 @@ impl Ext4BlockGroup{
 
         crc
     }
-    
+
     /// Synchronize the block group data to disk.
     pub fn sync_block_group_to_disk(
         &self,
@@ -190,7 +187,6 @@ impl Ext4BlockGroup{
         block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
     }
 
-
     /// Set the checksum of the block group descriptor.
     pub fn set_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) {
         let csum = self.get_block_group_checksum(bgid, super_block);
@@ -206,5 +202,55 @@ impl Ext4BlockGroup{
     ) {
         self.set_block_group_checksum(bgid as u32, super_block);
         self.sync_block_group_to_disk(block_device, bgid, super_block)
+    }
+
+    /// Set the block allocation bitmap checksum for this block group.
+    pub fn set_block_group_balloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
+        let desc_size = s.desc_size();
+
+        let csum = s.ext4_balloc_bitmap_csum(bitmap);
+        let lo_csum = (csum & 0xFFFF).to_le();
+        let hi_csum = (csum >> 16).to_le();
+
+        if (s.features_read_only & 0x400) >> 10 == 0 {
+            return;
+        }
+        self.block_bitmap_csum_lo = lo_csum as u16;
+        if desc_size == EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            self.block_bitmap_csum_hi = hi_csum as u16;
+        }
+    }
+
+    /// Get the count of free blocks in this block group.
+    pub fn get_free_blocks_count(&self) -> u64 {
+        let mut v = self.free_blocks_count_lo as u64;
+        if self.free_blocks_count_hi != 0 {
+            v |= (self.free_blocks_count_hi as u64) << 32;
+        }
+        v
+    }
+
+    /// Set the count of free blocks in this block group.
+    pub fn set_free_blocks_count(&mut self, cnt: u32) {
+        self.free_blocks_count_lo = ((cnt << 16) >> 16) as u16;
+        self.free_blocks_count_hi = (cnt >> 16) as u16;
+    }
+
+
+    /// Set the inode allocation bitmap checksum for this block group.
+    pub fn set_block_group_ialloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {
+        let desc_size = s.desc_size();
+
+        let csum = s.ext4_ialloc_bitmap_csum(bitmap);
+        let lo_csum = (csum & 0xFFFF).to_le();
+        let hi_csum = (csum >> 16).to_le();
+
+        if (s.features_read_only & 0x400) >> 10 == 0 {
+            return;
+        }
+        self.inode_bitmap_csum_lo = lo_csum as u16;
+        if desc_size == EXT4_MAX_BLOCK_GROUP_DESCRIPTOR_SIZE {
+            self.inode_bitmap_csum_hi = hi_csum as u16;
+        }
     }
 }

@@ -6,46 +6,45 @@ use super::*;
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Ext4Inode {
-    pub mode: u16,           // 文件类型和权限
-    pub uid: u16,            // 所有者用户 ID
-    pub size: u32,           // 低 32 位文件大小
-    pub atime: u32,          // 最近访问时间
-    pub ctime: u32,          // 创建时间
-    pub mtime: u32,          // 最近修改时间
-    pub dtime: u32,          // 删除时间
-    pub gid: u16,            // 所有者组 ID
-    pub links_count: u16,    // 链接计数
-    pub blocks: u32,         // 已分配的块数
-    pub flags: u32,          // 文件标志
-    pub osd1: u32,           // 操作系统相关的字段1
-    pub block: [u32; 15],    // 数据块指针
-    pub generation: u32,     // 文件版本（NFS）
-    pub file_acl: u32,       // 文件 ACL
-    pub size_hi: u32,        // 高 32 位文件大小
-    pub faddr: u32,          // 已废弃的碎片地址
-    pub osd2: Linux2,        // 操作系统相关的字段2
+    pub mode: u16,        // 文件类型和权限
+    pub uid: u16,         // 所有者用户 ID
+    pub size: u32,        // 低 32 位文件大小
+    pub atime: u32,       // 最近访问时间
+    pub ctime: u32,       // 创建时间
+    pub mtime: u32,       // 最近修改时间
+    pub dtime: u32,       // 删除时间
+    pub gid: u16,         // 所有者组 ID
+    pub links_count: u16, // 链接计数
+    pub blocks: u32,      // 已分配的块数
+    pub flags: u32,       // 文件标志
+    pub osd1: u32,        // 操作系统相关的字段1
+    pub block: [u32; 15], // 数据块指针
+    pub generation: u32,  // 文件版本（NFS）
+    pub file_acl: u32,    // 文件 ACL
+    pub size_hi: u32,     // 高 32 位文件大小
+    pub faddr: u32,       // 已废弃的碎片地址
+    pub osd2: Linux2,     // 操作系统相关的字段2
 
-    pub i_extra_isize: u16,    // 额外的 inode 大小
-    pub i_checksum_hi: u16,    // 高位校验和（crc32c(uuid+inum+inode) BE）
-    pub i_ctime_extra: u32,    // 额外的创建时间（纳秒 << 2 | 纪元）
-    pub i_mtime_extra: u32,    // 额外的修改时间（纳秒 << 2 | 纪元）
-    pub i_atime_extra: u32,    // 额外的访问时间（纳秒 << 2 | 纪元）
-    pub i_crtime: u32,         // 创建时间
-    pub i_crtime_extra: u32,   // 额外的创建时间（纳秒 << 2 | 纪元）
-    pub i_version_hi: u32,     // 高 32 位版本
+    pub i_extra_isize: u16,  // 额外的 inode 大小
+    pub i_checksum_hi: u16,  // 高位校验和（crc32c(uuid+inum+inode) BE）
+    pub i_ctime_extra: u32,  // 额外的创建时间（纳秒 << 2 | 纪元）
+    pub i_mtime_extra: u32,  // 额外的修改时间（纳秒 << 2 | 纪元）
+    pub i_atime_extra: u32,  // 额外的访问时间（纳秒 << 2 | 纪元）
+    pub i_crtime: u32,       // 创建时间
+    pub i_crtime_extra: u32, // 额外的创建时间（纳秒 << 2 | 纪元）
+    pub i_version_hi: u32,   // 高 32 位版本
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Linux2 {
-    pub l_i_blocks_high: u16,    // 高 16 位已分配块数
-    pub l_i_file_acl_high: u16,  // 高 16 位文件 ACL
-    pub l_i_uid_high: u16,       // 高 16 位用户 ID
-    pub l_i_gid_high: u16,       // 高 16 位组 ID
-    pub l_i_checksum_lo: u16,    // 低位校验和
-    pub l_i_reserved: u16,       // 保留字段
+    pub l_i_blocks_high: u16,   // 高 16 位已分配块数
+    pub l_i_file_acl_high: u16, // 高 16 位文件 ACL
+    pub l_i_uid_high: u16,      // 高 16 位用户 ID
+    pub l_i_gid_high: u16,      // 高 16 位组 ID
+    pub l_i_checksum_lo: u16,   // 低位校验和
+    pub l_i_reserved: u16,      // 保留字段
 }
-
 
 bitflags! {
     #[derive(Debug, PartialEq, Eq)]
@@ -145,7 +144,7 @@ impl Ext4Inode {
         self.links_count = links_count;
     }
 
-    pub fn blocks(&self) -> u64 {
+    pub fn blocks_count(&self) -> u64 {
         let mut blocks = self.blocks as u64;
         if self.osd2.l_i_blocks_high != 0 {
             blocks |= (self.osd2.l_i_blocks_high as u64) << 32;
@@ -153,7 +152,7 @@ impl Ext4Inode {
         blocks
     }
 
-    pub fn set_blocks(&mut self, blocks: u64) {
+    pub fn set_blocks_count(&mut self, blocks: u64) {
         self.blocks = (blocks & 0xFFFFFFFF) as u32;
         self.osd2.l_i_blocks_high = (blocks >> 32) as u16;
     }
@@ -287,11 +286,7 @@ impl Ext4Inode {
     }
 }
 
-
-
-
-
-impl Ext4Inode{
+impl Ext4Inode {
     pub fn file_type(&self) -> InodeFileType {
         InodeFileType::from_bits_truncate(self.mode & 0xF000)
     }
@@ -323,13 +318,112 @@ impl Ext4Inode{
     pub fn can_exec(&self) -> bool {
         self.inode_attr().contains(InodeAttr::S_IEXEC)
     }
-
-
 }
 
-
 /// Reference to an inode.
+#[derive(Clone)]
 pub struct Ext4InodeRef {
     pub inode_num: u32,
     pub inode: Ext4Inode,
+}
+
+impl Ext4Inode {
+    pub fn root_extent_mut_at(&mut self, pos: usize) -> &mut Ext4Extent{
+        let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
+        unsafe { &mut *(header_ptr.add(1) as *mut Ext4Extent).add(pos) }
+    }
+
+    pub fn extent_tree_init(&mut self) {
+        let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
+        unsafe {
+            (*header_ptr).set_magic();
+            (*header_ptr).set_entries_count(0);
+            (*header_ptr).set_max_entries_count(4); // 假设最大条目数为 4
+            (*header_ptr).set_depth(0);
+            (*header_ptr).set_generation(0);
+        }
+    }
+
+    fn get_checksum(&self, super_block: &Ext4Superblock) -> u32 {
+        let inode_size = super_block.inode_size;
+        let mut v: u32 = self.osd2.l_i_checksum_lo as u32;
+        if inode_size > 128 {
+            v |= (self.i_checksum_hi as u32) << 16;
+        }
+        v
+    }
+    #[allow(unused)]
+    pub fn set_inode_checksum_value(
+        &mut self,
+        super_block: &Ext4Superblock,
+        inode_id: u32,
+        checksum: u32,
+    ) {
+        let inode_size = super_block.inode_size();
+
+        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        if inode_size > 128 {
+            self.i_checksum_hi = (checksum >> 16) as u16;
+        }
+    }
+    fn copy_to_slice(&self, slice: &mut [u8]) {
+        unsafe {
+            let inode_ptr = self as *const Ext4Inode as *const u8;
+            let array_ptr = slice.as_ptr() as *mut u8;
+            core::ptr::copy_nonoverlapping(inode_ptr, array_ptr, 0x9c);
+        }
+    }
+    #[allow(unused)]
+    pub fn get_inode_checksum(&mut self, inode_id: u32, super_block: &Ext4Superblock) -> u32 {
+        let inode_size = super_block.inode_size();
+
+        let orig_checksum = self.get_checksum(super_block);
+        let mut checksum = 0;
+
+        let ino_index = inode_id as u32;
+        let ino_gen = self.generation;
+
+        // Preparation: temporarily set bg checksum to 0
+        self.osd2.l_i_checksum_lo = 0;
+        self.i_checksum_hi = 0;
+
+        checksum = ext4_crc32c(
+            EXT4_CRC32_INIT,
+            &super_block.uuid,
+            super_block.uuid.len() as u32,
+        );
+        checksum = ext4_crc32c(checksum, &ino_index.to_le_bytes(), 4);
+        checksum = ext4_crc32c(checksum, &ino_gen.to_le_bytes(), 4);
+
+        let mut raw_data = [0u8; 0x100];
+        self.copy_to_slice(&mut raw_data);
+
+        // inode checksum
+        checksum = ext4_crc32c(checksum, &raw_data, inode_size as u32);
+
+        self.set_inode_checksum_value(super_block, inode_id, checksum);
+
+        if inode_size == 128 {
+            checksum &= 0xFFFF;
+        }
+
+        checksum
+    }
+
+    pub fn set_inode_checksum(&mut self, super_block: &Ext4Superblock, inode_id: u32) {
+        let inode_size = super_block.inode_size();
+        let checksum = self.get_inode_checksum(inode_id, super_block);
+
+        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        if inode_size > 128 {
+            self.i_checksum_hi = (checksum >> 16) as u16;
+        }
+    }
+
+    pub fn sync_inode_to_disk(&self, block_device: Arc<dyn BlockDevice>, inode_pos: usize) {
+        let data = unsafe {
+            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Inode>())
+        };
+        block_device.write_offset(inode_pos, data);
+    }
 }

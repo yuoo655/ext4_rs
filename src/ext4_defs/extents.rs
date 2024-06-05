@@ -233,6 +233,21 @@ impl ExtentNode {
 impl ExtentNode {
     /// Binary search for the extent that contains the given block.
     pub fn binsearch_extent(&self, lblock: Ext4Lblk) -> Option<(Ext4Extent, usize)> {
+
+        // empty node
+        if self.header.entries_count == 0 {
+            match &self.data {
+                NodeData::Root(root_data) => {
+                    let extent = Ext4Extent::load_from_u32(&root_data[3..]);
+                    return Some((extent, 0));
+                }
+                NodeData::Internal(internal_data) => {
+                    let extent = Ext4Extent::load_from_u8(&internal_data[12..]);
+                    return Some((extent, 0));
+                }
+            }
+        }
+
         match &self.data {
             NodeData::Root(root_data) => {
                 let start = size_of::<Ext4ExtentHeader>() / 4;
@@ -289,6 +304,11 @@ impl ExtentNode {
 
     /// Binary search for the closest index of the given block.
     pub fn binsearch_idx(&self, lblock: Ext4Lblk) -> Option<usize> {
+
+        if self.header.entries_count == 0 {
+            return None;
+        }
+
         match &self.data {
             NodeData::Root(root_data) => {
                 // Root node handling
@@ -389,8 +409,18 @@ impl ExtentNode {
 }
 
 impl Ext4Extent {
+    /// Get the first block number(logical) of the extent.
+    pub fn get_first_block(&self) -> u32 {
+        self.first_block
+    }
+
+    /// Set the first block number(logical) of the extent.
+    pub fn set_first_block(&mut self, first_block: u32) {
+        self.first_block = first_block;
+    }
+
     /// Get the starting physical block number of the extent.
-    pub fn start_pblock(&self) -> u64 {
+    pub fn get_pblock(&self) -> u64 {
         let lo = u64::from(self.start_lo);
         let hi = u64::from(self.start_hi) << 32;
         lo | hi
@@ -401,6 +431,7 @@ impl Ext4Extent {
         self.start_lo = pblock as u32 & 0xffffffff;
         self.start_hi = (((pblock as u32) << 31) << 1) as u16;
     }
+
     /// Returns true if the extent is unwritten.
     pub fn is_unwritten(&self) -> bool {
         self.block_count > EXT_INIT_MAX_LEN
@@ -438,6 +469,39 @@ impl Ext4Extent {
     /// Marks the extent as unwritten.
     pub fn mark_unwritten(&mut self) {
         self.block_count |= EXT_INIT_MAX_LEN;
+    }
+}
+
+
+impl Ext4ExtentHeader {
+    pub fn new(magic: u16, entries: u16, max_entries: u16, depth: u16, generation: u32) -> Self {
+        Self {
+            magic,
+            entries_count: entries,
+            max_entries_count: max_entries,
+            depth,
+            generation,
+        }
+    }
+
+    pub fn set_depth(&mut self, depth: u16) {
+        self.depth = depth;
+    }
+
+    pub fn set_entries_count(&mut self, entries_count: u16) {
+        self.entries_count = entries_count;
+    }
+
+    pub fn set_generation(&mut self, generation: u32) {
+        self.generation = generation;
+    }
+
+    pub fn set_magic(&mut self) {
+        self.magic = EXT4_EXTENT_MAGIC;
+    }
+
+    pub fn set_max_entries_count(&mut self, max_entries_count: u16) {
+        self.max_entries_count = max_entries_count;
     }
 }
 

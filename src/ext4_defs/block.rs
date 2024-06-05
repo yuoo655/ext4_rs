@@ -53,11 +53,22 @@ impl Block {
             &mut *ptr
         }
     }
+
+    /// Write data to the block starting at a specific offset.
+    pub fn write_offset(&mut self, offset: usize, data: &[u8], len: usize) {
+        let end = offset + len;
+        if end <= self.data.len() {
+            let slice_end = len.min(data.len());
+            self.data[offset..end].copy_from_slice(&data[..slice_end]);
+        } else {
+            panic!("Write would overflow the block buffer");
+        }
+    }
 }
 
 
 impl Block{
-    pub fn sync_blk_to_disk(&self, block_device: Arc<dyn BlockDevice>  ){
+    pub fn sync_blk_to_disk(&self, block_device: Arc<dyn BlockDevice>){
         block_device.write_offset(self.disk_offset, &self.data);
     }
 }

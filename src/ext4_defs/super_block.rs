@@ -104,7 +104,6 @@ pub struct Ext4Superblock {
     checksum: u32,             // crc32c(superblock)
 }
 
-
 impl Ext4Superblock {
     /// Returns the size of inode structure.
     pub fn inode_size(&self) -> u16 {
@@ -156,7 +155,7 @@ impl Ext4Superblock {
             1
         } else {
             cnt
-        } 
+        }
     }
 
     pub fn blocks_count(&self) -> u32 {
@@ -214,11 +213,7 @@ impl Ext4Superblock {
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
         };
-        let checksum = ext4_crc32c(
-            EXT4_CRC32_INIT,
-            &data,
-            0x3fc,
-        );
+        let checksum = ext4_crc32c(EXT4_CRC32_INIT, &data, 0x3fc);
 
         self.checksum = checksum;
         let data = unsafe {
@@ -226,5 +221,26 @@ impl Ext4Superblock {
         };
         block_device.write_offset(SUPERBLOCK_OFFSET, data);
     }
+}
 
+impl Ext4Superblock {
+    /// Returns the checksum of the block bitmap
+    pub fn ext4_balloc_bitmap_csum(&self, bitmap: &[u8]) -> u32 {
+        let mut csum = 0;
+        let blocks_per_group = self.blocks_per_group;
+        let uuid = self.uuid;
+        csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        csum = ext4_crc32c(csum, bitmap, (blocks_per_group / 8) as u32);
+        csum
+    }
+
+    /// Returns the checksum of the inode bitmap
+    pub fn ext4_ialloc_bitmap_csum(&self, bitmap: &[u8]) -> u32 {
+        let mut csum = 0;
+        let inodes_per_group = self.inodes_per_group;
+        let uuid = self.uuid;
+        csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        csum = ext4_crc32c(csum, bitmap, (inodes_per_group + 7) / 8);
+        csum
+    }
 }
