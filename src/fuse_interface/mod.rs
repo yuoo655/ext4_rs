@@ -92,7 +92,14 @@ impl Ext4 {
 
     /// Create file node.
     /// Create a regular file, character device, block device, fifo or socket node.
-    fn fuse_mknod(&mut self, parent: u64, name: &str, mode: u32, umask: u32, rdev: u32) -> Result<usize> {
+    fn fuse_mknod(
+        &mut self,
+        parent: u64,
+        name: &str,
+        mode: u32,
+        umask: u32,
+        rdev: u32,
+    ) -> Result<usize> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
         let r = self.dir_find_entry(parent as u32, name, &mut search_result);
         if r.is_ok() {
@@ -103,7 +110,7 @@ impl Ext4 {
     }
 
     /// Create a directory.
-    fn fuse_mkdir(&mut self, parent: u64, name: &str, mode: u32, umask: u32)-> Result<usize> {
+    fn fuse_mkdir(&mut self, parent: u64, name: &str, mode: u32, umask: u32) -> Result<usize> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
         let r = self.dir_find_entry(parent as u32, name, &mut search_result);
         if r.is_ok() {
@@ -125,7 +132,20 @@ impl Ext4 {
     fn fuse_rmdir(&mut self, parent: u64, name: &str) {}
 
     /// Create a symbolic link.
-    fn fuse_symlink(&mut self, parent: u64, link_name: &str, target: &str) {}
+    fn fuse_symlink(&mut self, parent: u64, link_name: &str, target: &str) -> Result<usize> {
+        let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+        let r = self.dir_find_entry(parent as u32, link_name, &mut search_result);
+        if r.is_ok() {
+            return_errno!(Errno::EEXIST);
+        }
+
+        let mut mode = 0o777;
+        let file_type = InodeFileType::S_IFLNK;
+        mode |= file_type.bits();
+
+        let inode_ref = self.create(parent as u32, link_name, mode as u16)?;
+        Ok(EOK)
+    }
 
     /// Rename a file.
     fn fuse_rename(&mut self, parent: u64, name: &str, newparent: u64, newname: &str, flags: u32) {}
