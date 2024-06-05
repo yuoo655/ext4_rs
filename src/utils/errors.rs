@@ -82,7 +82,7 @@ impl From<alloc::string::FromUtf8Error> for Ext4Error {
 #[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {
-        return Err($crate::error::Ext4Error::new($errno))
+        return Err(Ext4Error::new($errno))
     };
 }
 
