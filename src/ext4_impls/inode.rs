@@ -57,6 +57,15 @@ impl Ext4 {
             .sync_inode_to_disk(self.block_device.clone(), inode_pos);
     }
 
+    /// write back inode with checksum
+    pub fn write_back_inode_without_csum(&self, inode_ref: &Ext4InodeRef) {
+        let inode_pos = self.inode_disk_pos(inode_ref.inode_num);
+
+        inode_ref
+            .inode
+            .sync_inode_to_disk(self.block_device.clone(), inode_pos);
+    }
+
     /// Get physical block id of a logical block.
     ///
     /// Parms:
@@ -146,7 +155,6 @@ impl Ext4 {
         newex.store_pblock(new_block);
         newex.block_count = min(1, EXT_MAX_BLOCKS - iblock) as u16;
 
-
         self.insert_extent(inode_ref, &mut newex)?;
 
         // Update the inode size
@@ -166,7 +174,6 @@ impl Ext4 {
     /// Returns:
     /// Result<u32> - inode number
     pub fn alloc_inode(&self, is_dir: bool) -> Result<u32> {
-        
         // Allocate inode
         let inode_num = self.ialloc_alloc_inode(is_dir)?;
 

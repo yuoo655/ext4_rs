@@ -20,46 +20,36 @@ impl Ext4 {
         child: &mut Ext4InodeRef,
         name: &str,
     ) -> Result<usize> {
-
         // Add a directory entry in the parent directory pointing to the child inode
+
+        // at this point should insert to existing block
         self.dir_add_entry(parent, child, name)?;
-
-
+        self.write_back_inode_without_csum(parent);
 
         // If this is the first link. add '.' and '..' entries
         if child.inode.is_dir() {
             // let child_ref = child.clone();
-            let mut child_inode_ref = Ext4InodeRef{
+            let new_child_ref = Ext4InodeRef {
                 inode_num: child.inode_num,
-                inode: child.inode.clone()
+                inode: child.inode.clone(),
             };
 
+            // at this point child need a new block
+            self.dir_add_entry(child, &new_child_ref, ".")?;
 
-            self.dir_add_entry(&mut child_inode_ref, child, ".")?;
-            self.dir_add_entry(&mut child_inode_ref, parent, "..")?;
+            // at this point should insert to existing block
+            self.dir_add_entry(child, &new_child_ref, "..")?;
 
-
-            // child.inode.set_links_count(2);
-            // let link_cnt = parent.inode.links_count() + 1;
-            // parent.inode.set_links_count(link_cnt);
-            child.inode.links_count = 2;
-            parent.inode.links_count += 1;
+            child.inode.set_links_count(2);
+            let link_cnt = parent.inode.links_count() + 1;
+            parent.inode.set_links_count(link_cnt);
 
             return Ok(EOK);
         }
 
-
         // Increment the link count of the child inode
-        child.inode.links_count += 1;
-        // let link_cnt = child.inode.links_count() + 1;
-        // child.inode.set_links_count(link_cnt);
-
-
-        //Write back the updated inodes to the disk with checksum
-        self.write_back_inode(parent);
-        self.write_back_inode(child);
-
-        
+        let link_cnt = child.inode.links_count() + 1;
+        child.inode.set_links_count(link_cnt);
 
         Ok(EOK)
     }
@@ -73,12 +63,19 @@ impl Ext4 {
     ///
     /// Returns:
     pub fn create(&self, parent: u32, name: &str, inode_mode: u16) -> Result<Ext4InodeRef> {
-        
         let mut parent_inode_ref = self.get_inode_ref(parent);
 
-        let mut child_inode_ref = self.create_inode(inode_mode)?;
+        // let mut child_inode_ref = self.create_inode(inode_mode)?;
+        let init_child_ref = self.create_inode(inode_mode)?;
+
+        self.write_back_inode_without_csum(&init_child_ref);
+        // load new
+        let mut child_inode_ref = self.get_inode_ref(init_child_ref.inode_num);
 
         self.link(&mut parent_inode_ref, &mut child_inode_ref, name)?;
+
+        self.write_back_inode(&mut parent_inode_ref);
+        self.write_back_inode(&mut child_inode_ref);
 
         Ok(child_inode_ref)
     }
