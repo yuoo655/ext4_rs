@@ -5,17 +5,15 @@ use crate::utils::*;
 use crate::ext4_defs::*;
 impl Ext4 {
     /// Opens and loads an Ext4 from the `block_device`.
-    pub fn open(block_device: Arc<dyn BlockDevice>) -> Arc<Self> {
+    pub fn open(block_device: Arc<dyn BlockDevice>) -> Self {
         // Load the superblock
         let block = Block::load(block_device.clone(), SUPERBLOCK_OFFSET);
         let super_block: Ext4Superblock = block.read_as();
 
-        let ext4: Arc<Ext4> = Arc::new_cyclic(|weak_ref| Self {
+        Ext4 {
             block_device,
-            super_block: super_block,
-            self_ref: weak_ref.clone(),
-        });
-        ext4
+            super_block,
+        }
     }
 
     // with dir result search path offset
