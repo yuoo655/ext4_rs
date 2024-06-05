@@ -289,7 +289,7 @@ impl Ext4 {
         write_flags: u32,
         flags: i32,
         lock_owner: Option<u64>,
-    ) ->Result<usize>{
+    ) -> Result<usize> {
         let write_size = self.write_at(ino as u32, offset as usize, data)?;
         Ok(write_size)
     }
@@ -337,7 +337,24 @@ impl Ext4 {
     /// anything in fh, though that makes it impossible to implement standard conforming
     /// directory stream operations in case the contents of the directory can change
     /// between opendir and releasedir.
-    fn fuse_opendir(&mut self, _ino: u64, _flags: i32) {}
+    fn fuse_opendir(&mut self, ino: u64, flags: i32) -> Result<usize>{
+
+        let inode_ref = self.get_inode_ref(ino as u32);
+
+        // 检查是否为目录
+        if !inode_ref.inode.is_dir() {
+            return_errno_with_message!(Errno::ENOTDIR, "Not a directory");
+        }
+
+        // // 检查权限（例如，只允许读取目录）
+        // let file_perm = inode_ref.inode.file_perm();
+        // if !file_perm.contains(InodePerm::S_IREAD) {
+        //     return_errno_with_message!(Errno::EACCES, "Permission denied");
+        // }
+
+        // 成功打开目录，返回文件句柄（这里假设返回 inode 编号作为文件句柄）
+        Ok(ino as usize)
+    }
 
     /// Read directory.
     /// Send a buffer filled using buffer.fill(), with size not exceeding the
