@@ -361,7 +361,11 @@ impl Ext4 {
     /// requested size. Send an empty buffer on end of stream. fh will contain the
     /// value set by the opendir method, or will be undefined if the opendir method
     /// didn't set any value.
-    fn fuse_readdir(&mut self, ino: u64, fh: u64, offset: i64) {}
+    fn fuse_readdir(&mut self, ino: u64, fh: u64, offset: i64) -> Result<Vec<Ext4DirEntry>>{
+        let mut entries = self.dir_get_entries(ino as u32);
+        entries = entries[offset as usize..].to_vec();
+        Ok(entries)
+    }
 
     /// Read directory.
     /// Send a buffer filled using buffer.fill(), with size not exceeding the
