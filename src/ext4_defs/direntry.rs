@@ -109,6 +109,13 @@ impl Default for Ext4DirEntry {
     }
 }
 
+impl<T> TryFrom<&[T]> for Ext4DirEntry {
+    type Error = u64;
+    fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
+        let data = data;
+        Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
+    }
+}
 
 /// Directory entry implementation.
 impl Ext4DirEntry {

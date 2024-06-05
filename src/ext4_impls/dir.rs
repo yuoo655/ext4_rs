@@ -193,7 +193,6 @@ impl Ext4 {
             let mut ext4block =
                 Block::load(self.block_device.clone(), pblock as usize * BLOCK_SIZE);
 
-
             let result = self.try_insert_to_existing_block(&mut ext4block, name, child.inode_num);
 
             if result.is_ok() {
@@ -220,8 +219,6 @@ impl Ext4 {
         let de_type = DirEntryType::EXT4_DE_DIR;
         self.insert_to_new_block(&mut new_ext4block, child.inode_num, name, de_type);
 
-        let de:Ext4DirEntry = new_ext4block.read_as();
-
         // set checksum
         self.dir_set_csum(&mut new_ext4block, parent.inode.generation());
         new_ext4block.sync_blk_to_disk(self.block_device.clone());
@@ -242,9 +239,8 @@ impl Ext4 {
         &self,
         block: &mut Block,
         name: &str,
-        inode: u32,
+        child_inode: u32,
     ) -> Result<usize> {
-
         // required length aligned to 4 bytes
         let required_len = {
             let mut len = size_of::<Ext4DirEntry>() + name.len();
@@ -258,7 +254,7 @@ impl Ext4 {
 
         // Start from the first entry
         while offset < BLOCK_SIZE - size_of::<Ext4DirEntryTail>() {
-            let mut de: Ext4DirEntry = block.read_offset_as(offset);
+            let mut de = Ext4DirEntry::try_from(&block.data[offset..]).unwrap();
 
             if de.unused() {
                 continue;
@@ -280,16 +276,15 @@ impl Ext4 {
                 // Create new directory entry
                 let mut new_entry = Ext4DirEntry::default();
 
-                let de_type = DirEntryType::EXT4_DE_DIR;
-                new_entry.write_entry(free_space as u16, inode, name, de_type);
-
                 // Update existing entry length and copy both entries back to block data
                 de.entry_len = sz as u16;
 
+                let de_type = DirEntryType::EXT4_DE_DIR;
+                new_entry.write_entry(free_space as u16, child_inode, name, de_type);
+
+                // update parent_de and new_de to blk_data
                 de.copy_to_slice(&mut block.data, offset);
                 new_entry.copy_to_slice(&mut block.data, offset + sz);
-
-                let after_insert: Ext4DirEntry = block.read_offset_as(offset + sz);
 
                 // Sync to disk
                 block.sync_blk_to_disk(self.block_device.clone());
@@ -325,13 +320,11 @@ impl Ext4 {
 
         copy_dir_entry_to_array(&new_entry, &mut block.data, 0);
 
-
         // init tail for new block
         let tail = Ext4DirEntryTail::new();
         tail.copy_to_slice(&mut block.data);
     }
 }
-
 
 pub fn copy_dir_entry_to_array(header: &Ext4DirEntry, array: &mut [u8], offset: usize) {
     unsafe {
