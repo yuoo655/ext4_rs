@@ -18,8 +18,17 @@ impl Ext4 {
     }
 
     /// Look up a directory entry by name and get its attributes.
-    pub fn fuse_lookup(&self, parent: u64, name: &str) {
-        unimplemented!()
+    pub fn fuse_lookup(&self, parent: u64, name: &str) -> Result<FileAttr> {
+        let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+
+        self.dir_find_entry(parent as u32, name, &mut search_result)?;
+
+        let inode_num = search_result.dentry.inode;
+
+        let inode_ref = self.get_inode_ref(inode_num);
+        let file_attr = FileAttr::from_inode_ref(&inode_ref);
+
+        Ok(file_attr)
     }
 
     /// Get file attributes.
@@ -275,7 +284,16 @@ impl Ext4 {
     fn fuse_bmap(&mut self, ino: u64, blocksize: u32, idx: u64) {}
 
     /// control device
-    fn fuse_ioctl(&mut self, ino: u64, fh: u64, flags: u32, cmd: u32, in_data: &[u8], out_size: u32) {}
+    fn fuse_ioctl(
+        &mut self,
+        ino: u64,
+        fh: u64,
+        flags: u32,
+        cmd: u32,
+        in_data: &[u8],
+        out_size: u32,
+    ) {
+    }
 
     /// Poll for events
     // #[cfg(feature = "abi-7-11")]

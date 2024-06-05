@@ -61,7 +61,7 @@ bitflags! {
 
 bitflags! {
     #[derive(Debug, PartialEq, Eq)]
-    pub struct InodeAttr: u16 {
+    pub struct InodePerm: u16 {
         const S_IREAD = 0x0100;
         const S_IWRITE = 0x0080;
         const S_IEXEC = 0x0040;
@@ -291,8 +291,8 @@ impl Ext4Inode {
         InodeFileType::from_bits_truncate(self.mode)
     }
 
-    pub fn inode_attr(&self) -> InodeAttr {
-        InodeAttr::from_bits_truncate(self.mode & 0x0FFF)
+    pub fn file_perm(&self) -> InodePerm {
+        InodePerm::from_bits_truncate(self.mode & 0x0FFF)
     }
 
     pub fn is_dir(&self) -> bool {
@@ -308,15 +308,15 @@ impl Ext4Inode {
     }
 
     pub fn can_read(&self) -> bool {
-        self.inode_attr().contains(InodeAttr::S_IREAD)
+        self.file_perm().contains(InodePerm::S_IREAD)
     }
 
     pub fn can_write(&self) -> bool {
-        self.inode_attr().contains(InodeAttr::S_IWRITE)
+        self.file_perm().contains(InodePerm::S_IWRITE)
     }
 
     pub fn can_exec(&self) -> bool {
-        self.inode_attr().contains(InodeAttr::S_IEXEC)
+        self.file_perm().contains(InodePerm::S_IEXEC)
     }
 }
 
