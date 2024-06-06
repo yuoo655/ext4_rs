@@ -74,20 +74,20 @@ pub enum NodeData {
 /// Search path in the extent tree.
 #[derive(Clone, Debug)]
 pub struct SearchPath {
-    pub depth: u16,                      // current depth
-    pub maxdepth: u16,                   // max depth
-    pub path: Vec<ExtentPathNode>,       // search result of each level
+    pub depth: u16,                // current depth
+    pub maxdepth: u16,             // max depth
+    pub path: Vec<ExtentPathNode>, // search result of each level
 }
 
 /// Extent tree node search result
 #[derive(Clone, Debug)]
 pub struct ExtentPathNode {
-    pub header: Ext4ExtentHeader,        // save header for convenience
-    pub index: Option<Ext4ExtentIndex>,  // for convenience(you can get index through pos of extent node)
-    pub extent: Option<Ext4Extent>,      // same reason as above
-    pub position: usize,                 // position of search result in the node
-    pub pblock: u64,                     // physical block of search result
-    pub pblock_of_node: usize            // physical block of this node
+    pub header: Ext4ExtentHeader,       // save header for convenience
+    pub index: Option<Ext4ExtentIndex>, // for convenience(you can get index through pos of extent node)
+    pub extent: Option<Ext4Extent>,     // same reason as above
+    pub position: usize,                // position of search result in the node
+    pub pblock: u64,                    // physical block of search result
+    pub pblock_of_node: usize,          // physical block of this node
 }
 
 /// load methods for Ext4ExtentHeader
@@ -234,7 +234,6 @@ impl ExtentNode {
 impl ExtentNode {
     /// Binary search for the extent that contains the given block.
     pub fn binsearch_extent(&self, lblock: Ext4Lblk) -> Option<(Ext4Extent, usize)> {
-
         // empty node
         if self.header.entries_count == 0 {
             match &self.data {
@@ -251,26 +250,12 @@ impl ExtentNode {
 
         match &self.data {
             NodeData::Root(root_data) => {
-                let start = size_of::<Ext4ExtentHeader>() / 4;
-                let extents = &root_data[start..];
-
-                let mut l = 0;
-                let mut r = (self.header.entries_count - 1) as usize;
-
-                while l <= r {
-                    let m = l + (r - l) / 2;
-                    let offset = m * size_of::<Ext4Extent>() / 4;
-                    let extent = Ext4Extent::load_from_u32(&extents[offset..]);
-
-                    if lblock < extent.first_block {
-                        if m == 0 {
-                            break;
-                        }
-                        r = m - 1;
-                    } else if lblock >= extent.first_block + extent.block_count as Ext4Lblk {
-                        l = m + 1;
-                    } else {
-                        return Some((extent, m));
+                let header = self.header;
+                for i in 0..header.entries_count {
+                    let idx = (3 + i * 3) as usize;
+                    let ext = Ext4Extent::load_from_u32(&root_data[idx..]);
+                    if lblock >= ext.first_block && lblock <= ext.get_actual_len() as u32 {
+                        return Some((ext, i as usize));
                     }
                 }
                 None
@@ -305,7 +290,6 @@ impl ExtentNode {
 
     /// Binary search for the closest index of the given block.
     pub fn binsearch_idx(&self, lblock: Ext4Lblk) -> Option<usize> {
-
         if self.header.entries_count == 0 {
             return None;
         }
@@ -478,7 +462,7 @@ impl Ext4Extent {
     pub fn mark_unwritten(&mut self) {
         self.block_count |= EXT_INIT_MAX_LEN;
     }
-    
+
     /// Get the last file block number that this extent covers.
     pub fn get_last_block(&self) -> u32 {
         self.first_block + self.block_count as u32 - 1
@@ -488,9 +472,7 @@ impl Ext4Extent {
     pub fn set_last_block(&mut self, last_block: u32) {
         self.block_count = (last_block - self.first_block + 1) as u16;
     }
-
 }
-
 
 impl Ext4ExtentHeader {
     pub fn new(magic: u16, entries: u16, max_entries: u16, depth: u16, generation: u32) -> Self {
