@@ -1,5 +1,6 @@
 #![feature(error_in_core)]
 #![no_std]
+#![allow(unused)]
 
 extern crate alloc;
 

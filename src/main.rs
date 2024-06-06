@@ -1,4 +1,5 @@
 #![feature(error_in_core)]
+#![allow(unused)]
 
 extern crate alloc;
 
