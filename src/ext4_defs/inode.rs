@@ -594,4 +594,38 @@ mod tests {
 
         assert!(!inode.check_access(uid, gid, access_mode as u16, umask));
     }
+    
+    #[test]
+    fn test_file_type() {
+        let inode = Ext4Inode {
+            mode: 0x8000, // Regular file
+            ..Default::default()
+        };
+        assert!(inode.is_file());
+        assert!(!inode.is_dir());
+        assert!(!inode.is_link());
+    }
+
+    #[test]
+    fn test_file_permissions() {
+        let inode = Ext4Inode {
+            mode: 0o755, // rwxr-xr-x
+            ..Default::default()
+        };
+        assert!(inode.can_read());
+        assert!(inode.can_write());
+        assert!(inode.can_exec());
+    }
+
+    #[test]
+    fn test_set_file_type_and_perm() {
+        let mut inode = Ext4Inode {
+            mode: 0,
+            ..Default::default()
+        };
+        inode.set_file_type(InodeFileType::S_IFREG);
+        assert_eq!(inode.mode, InodeFileType::S_IFREG.bits()); // Regular file with rwx permissions
+        inode.set_file_perm(InodePerm::S_IREAD | InodePerm::S_IWRITE | InodePerm::S_IEXEC);
+        assert_eq!(inode.mode, InodeFileType::S_IFREG.bits() | (InodePerm::S_IREAD | InodePerm::S_IWRITE | InodePerm::S_IEXEC).bits()); // Regular file with rwx permissions
+    }
 }
