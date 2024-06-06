@@ -51,6 +51,7 @@ impl Ext4 {
 
             let r = self.dir_find_entry(*parent, current_path, &mut dir_search_result);
 
+            // log::trace!("find in parent {:x?} r {:?} name {:?}", parent, r, current_path);
             if let Err(e) = r {
                 if e.error() != Errno::ENOENT.into() || !create {
                     return_errno_with_message!(Errno::ENOENT, "No such file or directory");
@@ -74,6 +75,9 @@ impl Ext4 {
 
             if is_goal {
                 break;
+            }else{
+                // update parent
+                *parent = dir_search_result.dentry.inode;
             }
             *name_off += len as u32;
         }
