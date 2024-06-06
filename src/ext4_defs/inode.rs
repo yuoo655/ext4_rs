@@ -336,9 +336,20 @@ pub struct Ext4InodeRef {
 }
 
 impl Ext4Inode {
-    pub fn root_extent_header(&self) -> &Ext4ExtentHeader{
+
+    /// Get the depth of the extent tree from an inode.
+    pub fn root_header_depth(&self) -> u16 {
+        self.root_extent_header().depth
+    }
+
+    pub fn root_extent_header_ref(&self) -> &Ext4ExtentHeader{
         let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
         unsafe{&*header_ptr}
+    }
+
+    pub fn root_extent_header(&self) -> Ext4ExtentHeader{
+        let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
+        unsafe{*header_ptr}
     }
 
     pub fn root_extent_header_mut(&mut self) -> &mut Ext4ExtentHeader{
