@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
 use crate::ext4_defs::*;
+use crate::utils::path_check;
 use crate::return_errno;
 use crate::return_errno_with_message;
 
@@ -159,7 +160,38 @@ impl Ext4 {
     }
 
     /// Remove a file.
-    fn fuse_unlink(&mut self, parent: u64, name: &str) {}
+    fn fuse_unlink(&mut self, parent: u64, name: &str) -> Result<usize> {
+
+        // unlink actual remove a file
+
+        // get child inode num
+        let mut parent_inode = parent as u32;
+        let mut nameoff = 0;
+        let child_inode = self.generic_open(name, &mut parent_inode, false, 0, &mut nameoff)?;
+
+        let mut child_inode_ref = self.get_inode_ref(child_inode);
+        let child_link_cnt = child_inode_ref.inode.links_count();
+        if child_link_cnt == 1 {
+            self.truncate_inode(&mut child_inode_ref, 0)?;
+        }
+
+        // get child name
+        let mut is_goal = false;
+        let p = &name[nameoff as usize..];
+        let len = path_check(p, &mut is_goal);
+
+        // load parent 
+        let mut parent_inode_ref = self.get_inode_ref(parent_inode);
+
+        let r = self.unlink(
+            &mut parent_inode_ref,
+            &mut child_inode_ref,
+            &p[..len as usize],
+        )?;
+
+        Ok(EOK)
+
+    }
 
     /// Remove a directory.
     fn fuse_rmdir(&mut self, parent: u64, name: &str) {}
