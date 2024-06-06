@@ -20,7 +20,7 @@ impl Ext4 {
     pub fn generic_open(
         &self,
         path: &str,
-        parent_inode_num: u32,
+        parent_inode_num: &mut u32,
         create: bool,
         ftype: u16,
         name_off: &mut u32,
@@ -32,9 +32,7 @@ impl Ext4 {
         let mut search_path = path;
 
         let mut dir_search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
-
-        let mut current_inode_ref = self.get_inode_ref(parent);
-
+        
         loop {
             while search_path.starts_with('/') {
                 *name_off += 1; // Skip the slash
@@ -51,7 +49,7 @@ impl Ext4 {
 
             search_path = &search_path[len..];
 
-            let r = self.dir_find_entry(parent, current_path, &mut dir_search_result);
+            let r = self.dir_find_entry(*parent, current_path, &mut dir_search_result);
 
             if let Err(e) = r {
                 if e.error() != Errno::ENOENT.into() || !create {
@@ -65,15 +63,14 @@ impl Ext4 {
                     inode_mode = InodeFileType::S_IFDIR.bits();
                 }
 
-                let new_inode_ref = self.create(parent, current_path, inode_mode)?;
+                let new_inode_ref = self.create(*parent, current_path, inode_mode)?;
 
-                current_inode_ref = new_inode_ref;
-                parent = current_inode_ref.inode_num;
+                // not goal update parent
+                *parent = new_inode_ref.inode_num;
                 
                 continue;
             }
 
-            parent = dir_search_result.dentry.inode;
 
             if is_goal {
                 break;
@@ -93,7 +90,13 @@ impl Ext4 {
         let mut nameoff = 0;
 
         let filetype = InodeFileType::S_IFDIR;
-        let r = self.generic_open(path, ROOT_INODE, true, filetype.bits(), &mut nameoff);
+        
+        // todo get this path's parent
+        
+        // start from root
+        let mut parent = ROOT_INODE;
+
+        let r = self.generic_open(path, &mut parent, true, filetype.bits(), &mut nameoff);
         Ok(EOK)
     }
 
