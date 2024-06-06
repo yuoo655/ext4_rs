@@ -423,16 +423,16 @@ impl Ext4 {
     /// This will be called for the access() system call. If the 'default_permissions'
     /// mount option is given, this method is not called. This method is not called
     /// under Linux kernel versions 2.4.x
+    /// int access(const char *pathname, int mode);
+    /// int faccessat(int dirfd, const char *pathname, int mode, int flags);
     /// 
     /// uid and gid come from request
-    fn fuse_access(&mut self, ino: u64, uid: u16, gid: u16, mask: i32)  -> bool{
-
+    fn fuse_access(&mut self, ino: u64, uid: u16, gid: u16, mode: u16, mask: i32) -> bool {
         let inode_ref = self.get_inode_ref(ino as u32);
 
-        inode_ref.inode.check_access(uid, gid,  mask as u16)
+        inode_ref.inode.check_access(uid, gid, mode, mask as u16)
     }
 
-    
     /// Initialize filesystem.
     /// Called before any other filesystem method.
     /// The kernel module connection can be configured using the KernelConfig object

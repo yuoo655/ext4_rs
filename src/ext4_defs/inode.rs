@@ -336,38 +336,37 @@ pub struct Ext4InodeRef {
 }
 
 impl Ext4Inode {
-
     /// Get the depth of the extent tree from an inode.
     pub fn root_header_depth(&self) -> u16 {
         self.root_extent_header().depth
     }
 
-    pub fn root_extent_header_ref(&self) -> &Ext4ExtentHeader{
+    pub fn root_extent_header_ref(&self) -> &Ext4ExtentHeader {
         let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
-        unsafe{&*header_ptr}
+        unsafe { &*header_ptr }
     }
 
-    pub fn root_extent_header(&self) -> Ext4ExtentHeader{
+    pub fn root_extent_header(&self) -> Ext4ExtentHeader {
         let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
-        unsafe{*header_ptr}
+        unsafe { *header_ptr }
     }
 
-    pub fn root_extent_header_mut(&mut self) -> &mut Ext4ExtentHeader{
+    pub fn root_extent_header_mut(&mut self) -> &mut Ext4ExtentHeader {
         let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
-        unsafe{&mut*header_ptr}
+        unsafe { &mut *header_ptr }
     }
 
-    pub fn root_extent_mut_at(&mut self, pos: usize) -> &mut Ext4Extent{
+    pub fn root_extent_mut_at(&mut self, pos: usize) -> &mut Ext4Extent {
         let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
         unsafe { &mut *(header_ptr.add(1) as *mut Ext4Extent).add(pos) }
     }
 
-    pub fn root_extent_ref_at(&mut self, pos: usize) -> &Ext4Extent{
+    pub fn root_extent_ref_at(&mut self, pos: usize) -> &Ext4Extent {
         let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
-        unsafe { & *(header_ptr.add(1) as *const Ext4Extent).add(pos) }
+        unsafe { &*(header_ptr.add(1) as *const Ext4Extent).add(pos) }
     }
 
-    pub fn root_extent_at(&mut self, pos: usize) -> Ext4Extent{
+    pub fn root_extent_at(&mut self, pos: usize) -> Ext4Extent {
         let header_ptr = self.block.as_ptr() as *const Ext4ExtentHeader;
         unsafe { *(header_ptr.add(1) as *const Ext4Extent).add(pos) }
     }
@@ -493,12 +492,14 @@ impl Ext4Inode {
     //    the possibility to prevent malicious users from causing them to
     //    read files which users shouldn't be able to read.
     //   https://man7.org/linux/man-pages/man2/access.2.html
-    pub fn check_access(&self, uid: u16, gid: u16, umask: u16) -> bool {
+    // Check if a user can access the inode with the given UID, GID, and umask
+    pub fn check_access(&self, uid: u16, gid: u16, access_mode: u16, umask: u16) -> bool {
         // Extract the owner, group, and other permission bits from the inode's mode
         let owner_perm = (self.mode & 0o700) >> 6;
         let group_perm = (self.mode & 0o070) >> 3;
         let other_perm = self.mode & 0o007;
 
+        // Determine which permission bits to check based on the given UID and GID
         let perm = if self.uid == uid {
             owner_perm
         } else if self.gid == gid {
@@ -507,17 +508,90 @@ impl Ext4Inode {
             other_perm
         };
 
+        // Adjust the permission bits based on the umask
         let adjusted_perm = perm & !((umask & 0o700) >> 6);
 
         // Check if the adjusted permission bits allow the requested access
-        let can_read = (self.mode & R_OK as u16) == R_OK as u16;
-        let can_write = (self.mode & W_OK as u16) == W_OK as u16;
-        let can_execute = (self.mode & X_OK as u16) == X_OK as u16;
+        let check_read =
+            (access_mode & R_OK as u16) == 0 || (adjusted_perm & R_OK as u16) == R_OK as u16;
+        let check_write =
+            (access_mode & W_OK as u16) == 0 || (adjusted_perm & W_OK as u16) == W_OK as u16;
+        let check_execute =
+            (access_mode & X_OK as u16) == 0 || (adjusted_perm & X_OK as u16) == X_OK as u16;
 
-        let check_read = (adjusted_perm & R_OK as u16) == R_OK as u16;
-        let check_write = (adjusted_perm & W_OK as u16) == W_OK as u16;
-        let check_execute = (adjusted_perm & X_OK as u16) == X_OK as u16;
+        check_read && check_write && check_execute
+    }
+}
 
-        check_read && check_write && check_execute && can_read && can_write && can_execute
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_access_owner() {
+        let inode = Ext4Inode {
+            mode: 0o755, // rwxr-xr-x
+            uid: 1000,
+            gid: 1000,
+            ..Default::default()
+        };
+
+        let uid = 1000;
+        let gid = 1000;
+        let umask = 0o022; // Default umask
+        let access_mode = R_OK | X_OK;
+
+        assert!(inode.check_access(uid, gid, umask, access_mode as u16));
+    }
+
+    #[test]
+    fn test_check_access_group() {
+        let inode = Ext4Inode {
+            mode: 0o750, // rwxr-x---
+            uid: 1000,
+            gid: 1001,
+            ..Default::default()
+        };
+
+        let uid = 1002;
+        let gid = 1001;
+        let umask = 0o022; // Default umask
+        let access_mode = R_OK | X_OK;
+
+        assert!(inode.check_access(uid, gid, access_mode as u16, umask));
+    }
+
+    #[test]
+    fn test_check_access_other() {
+        let inode = Ext4Inode {
+            mode: 0o755, // rwxr-xr-x
+            uid: 1000,
+            gid: 1000,
+            ..Default::default()
+        };
+
+        let uid = 1002;
+        let gid = 1003;
+        let umask = 0o022; // Default umask
+        let access_mode = R_OK;
+
+        assert!(inode.check_access(uid, gid, access_mode as u16, umask));
+    }
+
+    #[test]
+    fn test_check_access_denied() {
+        let inode = Ext4Inode {
+            mode: 0o700, // rwx------
+            uid: 1000,
+            gid: 1000,
+            ..Default::default()
+        };
+
+        let uid = 1002;
+        let gid = 1003;
+        let umask = 0o022; // Default umask
+        let access_mode = R_OK;
+
+        assert!(!inode.check_access(uid, gid, access_mode as u16, umask));
     }
 }
