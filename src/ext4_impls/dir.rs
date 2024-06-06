@@ -349,6 +349,80 @@ impl Ext4 {
 
         Ok(EOK)
     }
+
+    pub fn dir_has_entry(&self, dir_inode: u32) -> bool {
+        // load parent inode
+        let parent = self.get_inode_ref(dir_inode);
+        assert!(parent.inode.is_dir());
+
+        // start from the first logical block
+        let mut iblock = 0;
+        // physical block id
+        let mut fblock: Ext4Fsblk = 0;
+
+        // calculate total blocks
+        let inode_size: u64 = parent.inode.size();
+        let total_blocks: u64 = inode_size / BLOCK_SIZE as u64;
+
+        // iterate all blocks
+        while iblock < total_blocks {
+            let search_path = self.find_extent(&parent, iblock as u32);
+
+            if let Ok(path) = search_path {
+                // get the last path
+                let path = path.path.last().unwrap();
+
+                // get physical block id
+                fblock = path.pblock;
+
+                // load physical block
+                let ext4block =
+                    Block::load(self.block_device.clone(), fblock as usize * BLOCK_SIZE);
+
+                // start from the first entry
+                let mut offset = 0;
+                while offset < BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>() {
+                    let de: Ext4DirEntry = ext4block.read_offset_as(offset);
+                    offset = offset + de.entry_len as usize;
+                    if de.inode == 0 {
+                        continue;
+                    }
+                    // skip . and ..
+                    if de.get_name() == "." || de.get_name() == ".." {
+                        continue;
+                    }
+                    return true;
+                }
+            }
+            // go to next block
+            iblock += 1
+        }
+
+        false
+    }
+
+    pub fn dir_remove(&self, parent: u32, path: &str) -> Result<usize> {
+        log::info!("dir remove");
+        let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+
+        let r = self.dir_find_entry(parent as u32, path, &mut search_result)?;
+
+        let mut parent_inode_ref = self.get_inode_ref(parent);
+        let mut child_inode_ref = self.get_inode_ref(search_result.dentry.inode);
+
+        self.truncate_inode(&mut child_inode_ref, 0)?;
+
+        self.unlink(&mut parent_inode_ref, &mut child_inode_ref, path)?;
+
+        self.write_back_inode(&mut parent_inode_ref);
+
+        // to do
+        // ext4_inode_set_del_time
+        // ext4_inode_set_links_cnt
+        // ext4_fs_free_inode(&child)
+
+        return Ok(EOK);
+    }
 }
 
 pub fn copy_dir_entry_to_array(header: &Ext4DirEntry, array: &mut [u8], offset: usize) {

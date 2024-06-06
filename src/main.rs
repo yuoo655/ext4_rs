@@ -125,4 +125,7 @@ fn main() {
     let path = "test_files/file_to_remove";
     let r = ext4.file_remove(&path);
 
+    let path = "dir_to_remove";
+    let r = ext4.dir_remove(ROOT_INODE, &path);
+
 }
