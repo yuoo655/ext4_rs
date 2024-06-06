@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::return_errno_with_message;
-
+use crate::utils::path_check;
 use crate::ext4_defs::*;
 
 impl Ext4 {
@@ -337,15 +337,32 @@ impl Ext4 {
     /// Returns:
     /// Result<usize> - status of the operation
     pub fn file_remove(&self, path: &str) -> Result<usize> {
+        // start from root
         let mut parent_inode_num = ROOT_INODE;
 
         let mut nameoff = 0;
-        let child_inode = self.generic_open(path, parent_inode_num, false, 0, &mut nameoff)?;
+        let child_inode = self.generic_open(path, &mut parent_inode_num, false, 0, &mut nameoff)?;
 
         let mut child_inode_ref = self.get_inode_ref(child_inode);
-
         let child_link_cnt = child_inode_ref.inode.links_count();
-        if child_link_cnt == 0 {}
+        if child_link_cnt == 1 {
+            self.truncate_inode(&mut child_inode_ref, 0)?;
+        }
+
+        // get child name
+        let mut is_goal = false;
+        let p = &path[nameoff as usize..];
+        let len = path_check(p, &mut is_goal);
+
+        // load parent 
+        let mut parent_inode_ref = self.get_inode_ref(parent_inode_num);
+
+        let r = self.unlink(
+            &mut parent_inode_ref,
+            &mut child_inode_ref,
+            &p[..len as usize],
+        )?;
+
 
         Ok(EOK)
     }
@@ -360,7 +377,7 @@ impl Ext4 {
     /// Result<usize> - status of the operation
     pub fn truncate_inode(&self, inode_ref: &mut Ext4InodeRef, new_size: u64) -> Result<usize> {
         let old_size = inode_ref.inode.size();
-
+        
         assert!(old_size > new_size);
 
         if old_size == new_size {
@@ -373,7 +390,7 @@ impl Ext4 {
         let diff_blocks_cnt = old_blocks_cnt - new_blocks_cnt;
 
         if diff_blocks_cnt > 0{
-            // self.extent_remove_space(inode_ref, new_blocks_cnt, EXT_MAX_BLOCKS as u32)?;
+            self.extent_remove_space(inode_ref, new_blocks_cnt, EXT_MAX_BLOCKS as u32)?;
         }
 
         inode_ref.inode.set_size(new_size);
