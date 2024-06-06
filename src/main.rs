@@ -30,7 +30,7 @@ struct SimpleLogger;
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Info
+        metadata.level() <= Level::Trace
     }
 
     fn log(&self, record: &Record) {
@@ -121,5 +121,8 @@ fn main() {
     log::info!("mkdir making {:?}", path);
     let r = ext4.dir_mk(&path);
     assert!(r.is_ok(), "dir make error {:?}", r.err());
+
+    let path = "test_files/file_to_remove";
+    let r = ext4.file_remove(&path);
 
 }
