@@ -402,7 +402,6 @@ impl Ext4 {
     }
 
     pub fn dir_remove(&self, parent: u32, path: &str) -> Result<usize> {
-        log::info!("dir remove");
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
 
         let r = self.dir_find_entry(parent as u32, path, &mut search_result)?;
