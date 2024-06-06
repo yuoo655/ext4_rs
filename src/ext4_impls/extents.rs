@@ -587,11 +587,12 @@ impl Ext4 {
         // +--------+--------+...+--------+
         // | ext3   | ext4   |...| extn   |
         // +--------+--------+...+--------+
-        //      ^       ^            ^
+        //      ^       ^            
+        //      rm      rm
         // After:
-        // +--------+...+--------+--------+
-        // | ext1   |...| extn   | [empty]|
-        // +--------+...+--------+--------+
+        // +--------+.+--------+--------+...
+        // | ext1   |.| extn   | [empty]|...
+        // +--------+.+--------+--------+...
 
         // Move any remaining extents to the starting position of the node.
         if ex2.first_block > 0 {
@@ -709,7 +710,7 @@ impl Ext4 {
         //           ^
         // Updated parent index if necessary
 
-        // 如果当前层不是根层，需要检查是否需要更新父节点索引
+        // 如果当前层不是根，需要检查是否需要更新父节点索引
         while i > 0 {
             if path.path[i].position != 0 {
                 break;
@@ -728,35 +729,9 @@ impl Ext4 {
         Ok(EOK)
     }
 
+    /// Correct the first block of the parent index.
     fn ext_correct_indexes(&self, path: &mut SearchPath) -> Result<usize> {
-        // Initial state:
-        // +--------+--------+--------+
-        // |  ext1  |  ext2  |  ext3  |
-        // +--------+--------+--------+
-        // ^
-        // pos=0, new_entry_count=3
-
-        // Removing extents from 'from' to 'to':
-        // +--------+--------+--------+
-        // |[empty] |  ext2  |  ext3  |
-        // +--------+--------+--------+
-        // ^
-        // pos=0, new_entry_count=2
-
-        // Move remaining extents to the starting position:
-        // +--------+--------+--------+
-        // |  ext2  |  ext3  |[empty] |
-        // +--------+--------+--------+
-        // ^
-        // pos=0, new_entry_count=2
-
-        // Correct indexes if extent pointer is at the first extent:
-        // +--------+--------+--------+
-        // |  ext2  |  ext3  |[empty] |
-        // +--------+--------+--------+
-        // ^
-        // pos=0, new_entry_count=2
-
+        // if child get removed from parent, we need to update the parent's first_block
         let mut depth = path.depth as usize;
 
         while depth > 0 {
@@ -774,6 +749,38 @@ impl Ext4 {
 
             depth -= 1;
         }
+
+        // depth 2:
+        // +--------+--------+--------+
+        // |[empty] |  ext2  |  ext3  |
+        // +--------+--------+--------+
+        // ^
+        // pos=0, index first block = 1
+
+        // depth 2:
+        // +--------+--------+--------+
+        // |  ext2  |  ext3  |[empty] |
+        // +--------+--------+--------+
+        // ^
+        // pos=0, index first block = 100
+
+
+
+        // 更新父节点索引：
+        // depth 1:
+        // +-----------------------+
+        // | idx1_2 |...| idx1_n   |
+        // +-----------------------+
+        //     ^
+        //     更新父节点索引(first_block)
+
+        // depth 0:
+        // +--------+--------+--------+
+        // |  idx1  |  idx2  |  idx3  |
+        // +--------+--------+--------+
+        //     |
+        //     更新根节点索引(first_block)
+
 
         Ok(EOK)
     }
