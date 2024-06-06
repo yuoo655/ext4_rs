@@ -515,3 +515,232 @@ impl SearchPath {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::mem::size_of;
+
+    #[test]
+    fn test_load_from_data() {
+        // Create a valid root node data
+        let mut data: [u8; 15 * 4] = [0; 15 * 4];
+        data[0..2].copy_from_slice(&EXT4_EXTENT_MAGIC.to_le_bytes()); // set magic number
+        let node = ExtentNode::load_from_data(&data, true).expect("Failed to load root node");
+        assert_eq!(node.header.magic, EXT4_EXTENT_MAGIC);
+
+        // Create a valid internal node data
+        let mut data: Vec<u8> = vec![0; BLOCK_SIZE];
+        data[0..2].copy_from_slice(&EXT4_EXTENT_MAGIC.to_le_bytes()); // set magic number
+        let node = ExtentNode::load_from_data(&data, false).expect("Failed to load internal node");
+        assert_eq!(node.header.magic, EXT4_EXTENT_MAGIC);
+
+        // Test invalid data length for root node
+        let invalid_data: [u8; 10] = [0; 10];
+        let result = ExtentNode::load_from_data(&invalid_data, true);
+        assert!(result.is_err(), "Expected error for invalid root node data length");
+
+        // Test invalid data length for internal node
+        let invalid_data: [u8; BLOCK_SIZE - 1] = [0; BLOCK_SIZE - 1];
+        let result = ExtentNode::load_from_data(&invalid_data, false);
+        assert!(result.is_err(), "Expected error for invalid internal node data length");
+    }
+
+    #[test]
+    fn test_binsearch_extent() {
+        // Create a mock extent node
+        let extents = [
+            Ext4Extent {
+                first_block: 0,
+                block_count: 10,
+                ..Default::default()
+            },
+            Ext4Extent {
+                first_block: 10,
+                block_count: 10,
+                ..Default::default()
+            },
+        ];
+
+        let internal_data: Vec<u8> = unsafe {
+            let mut data = vec![0; BLOCK_SIZE];
+            let header_ptr = data.as_mut_ptr() as *mut Ext4ExtentHeader;
+            (*header_ptr).entries_count = 2;
+            let extent_ptr = header_ptr.add(1) as *mut Ext4Extent;
+            core::ptr::copy_nonoverlapping(extents.as_ptr(), extent_ptr, 2);
+            data
+        };
+
+        let node = ExtentNode {
+            header: Ext4ExtentHeader {
+                entries_count: 2,
+                ..Default::default()
+            },
+            data: NodeData::Internal(internal_data),
+            is_root: false,
+        };
+
+        // Search for a block within the extents
+        let result = node.binsearch_extent(5);
+        assert!(result.is_some());
+        let (extent, pos) = result.unwrap();
+        assert_eq!(extent.first_block, 0);
+        assert_eq!(pos, 0);
+
+        // Search for a block within the second extent
+        let result = node.binsearch_extent(15);
+        assert!(result.is_some());
+        let (extent, pos) = result.unwrap();
+        assert_eq!(extent.first_block, 10);
+        assert_eq!(pos, 1);
+
+        // Search for a block outside the extents
+        let result = node.binsearch_extent(20);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_binsearch_idx() {
+        // Create a mock index node
+        let indexes = [
+            Ext4ExtentIndex {
+                first_block: 0,
+                ..Default::default()
+            },
+            Ext4ExtentIndex {
+                first_block: 10,
+                ..Default::default()
+            },
+        ];
+
+        let internal_data: Vec<u8> = unsafe {
+            let mut data = vec![0; BLOCK_SIZE];
+            let header_ptr = data.as_mut_ptr() as *mut Ext4ExtentHeader;
+            (*header_ptr).entries_count = 2;
+            let index_ptr = header_ptr.add(1) as *mut Ext4ExtentIndex;
+            core::ptr::copy_nonoverlapping(indexes.as_ptr(), index_ptr, 2);
+            data
+        };
+
+        let node = ExtentNode {
+            header: Ext4ExtentHeader {
+                entries_count: 2,
+                ..Default::default()
+            },
+            data: NodeData::Internal(internal_data),
+            is_root: false,
+        };
+
+        // Search for the closest index of the given block
+        let result = node.binsearch_idx(5);
+        assert!(result.is_some());
+        let pos = result.unwrap();
+        assert_eq!(pos, 0);
+
+        // Search for the closest index of the given block
+        let result = node.binsearch_idx(15);
+        assert!(result.is_some());
+        let pos = result.unwrap();
+        assert_eq!(pos, 1);
+
+        // Search for a block outside the indexes
+        let result = node.binsearch_idx(20);
+        assert!(result.is_some());
+        let pos = result.unwrap();
+        assert_eq!(pos, 1);
+    }
+
+    #[test]
+    fn test_get_index() {
+        // Create a mock index node
+        let indexes = [
+            Ext4ExtentIndex {
+                first_block: 0,
+                leaf_lo: 1,
+                leaf_hi: 2,
+                ..Default::default()
+            },
+            Ext4ExtentIndex {
+                first_block: 10,
+                leaf_lo: 11,
+                leaf_hi: 12,
+                ..Default::default()
+            },
+        ];
+
+        let internal_data: Vec<u8> = unsafe {
+            let mut data = vec![0; BLOCK_SIZE];
+            let header_ptr = data.as_mut_ptr() as *mut Ext4ExtentHeader;
+            (*header_ptr).entries_count = 2;
+            let index_ptr = header_ptr.add(1) as *mut Ext4ExtentIndex;
+            core::ptr::copy_nonoverlapping(indexes.as_ptr(), index_ptr, 2);
+            data
+        };
+
+        let node = ExtentNode {
+            header: Ext4ExtentHeader {
+                entries_count: 2,
+                ..Default::default()
+            },
+            data: NodeData::Internal(internal_data),
+            is_root: false,
+        };
+
+        // Get the index at position 0
+        let index = node.get_index(0).expect("Failed to get index at position 0");
+        assert_eq!(index.first_block, 0);
+        assert_eq!(index.leaf_lo, 1);
+        assert_eq!(index.leaf_hi, 2);
+
+        // Get the index at position 1
+        let index = node.get_index(1).expect("Failed to get index at position 1");
+        assert_eq!(index.first_block, 10);
+        assert_eq!(index.leaf_lo, 11);
+        assert_eq!(index.leaf_hi, 12);
+    }
+
+    #[test]
+    fn test_get_extent() {
+        // Create a mock extent node
+        let extents = [
+            Ext4Extent {
+                first_block: 0,
+                block_count: 10,
+                ..Default::default()
+            },
+            Ext4Extent {
+                first_block: 10,
+                block_count: 10,
+                ..Default::default()
+            },
+        ];
+
+        let internal_data: Vec<u8> = unsafe {
+            let mut data = vec![0; BLOCK_SIZE];
+            let header_ptr = data.as_mut_ptr() as *mut Ext4ExtentHeader;
+            (*header_ptr).entries_count = 2;
+            let extent_ptr = header_ptr.add(1) as *mut Ext4Extent;
+            core::ptr::copy_nonoverlapping(extents.as_ptr(), extent_ptr, 2);
+            data
+        };
+
+        let node = ExtentNode {
+            header: Ext4ExtentHeader {
+                entries_count: 2,
+                ..Default::default()
+            },
+            data: NodeData::Internal(internal_data),
+            is_root: false,
+        };
+
+        // Get the extent at position 0
+        let extent = node.get_extent(0).expect("Failed to get extent at position 0");
+        assert_eq!(extent.first_block, 0);
+        assert_eq!(extent.block_count, 10);
+
+        // Get the extent at position 1
+        let extent = node.get_extent(1).expect("Failed to get extent at position 1");
+        assert_eq!(extent.first_block, 10);
+        assert_eq!(extent.block_count, 10);
+    }
+}
