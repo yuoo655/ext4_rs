@@ -53,11 +53,12 @@ impl Ext4 {
 
     #[allow(unused)]
     pub fn balloc_free_blocks(
-        &mut self,
+        &self,
         inode_ref: &mut Ext4InodeRef,
         start: Ext4Fsblk,
         count: u32,
     ) {
+        // log::trace!("balloc_free_blocks start {:x?} count {:x?}", start, count);
         let mut count = count as usize;
         let mut start = start;
 
