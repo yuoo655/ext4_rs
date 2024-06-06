@@ -587,7 +587,7 @@ impl Ext4 {
         // +--------+--------+...+--------+
         // | ext3   | ext4   |...| extn   |
         // +--------+--------+...+--------+
-        //      ^       ^            
+        //      ^       ^
         //      rm      rm
         // After:
         // +--------+.+--------+--------+...
@@ -734,37 +734,19 @@ impl Ext4 {
         // if child get removed from parent, we need to update the parent's first_block
         let mut depth = path.depth as usize;
 
-        while depth > 0 {
-            let parent_idx = depth - 1;
-
-            // 获取当前层的 extent
-            if let Some(child_extent) = path.path[depth].extent {
-                // 获取父节点
-                let parent_node = &mut path.path[parent_idx];
-                // 获取父节点的索引，并更新 first_block
-                if let Some(ref mut parent_index) = parent_node.index {
-                    parent_index.first_block = child_extent.first_block;
-                }
-            }
-
-            depth -= 1;
-        }
-
         // depth 2:
         // +--------+--------+--------+
         // |[empty] |  ext2  |  ext3  |
         // +--------+--------+--------+
         // ^
-        // pos=0, index first block = 1
+        // pos=0, ext1_first_block=0(removed) parent index first block=0
 
         // depth 2:
         // +--------+--------+--------+
         // |  ext2  |  ext3  |[empty] |
         // +--------+--------+--------+
         // ^
-        // pos=0, index first block = 100
-
-
+        // pos=0, now first_block=ext2_first_block
 
         // 更新父节点索引：
         // depth 1:
@@ -781,6 +763,21 @@ impl Ext4 {
         //     |
         //     更新根节点索引(first_block)
 
+        while depth > 0 {
+            let parent_idx = depth - 1;
+
+            // 获取当前层的 extent
+            if let Some(child_extent) = path.path[depth].extent {
+                // 获取父节点
+                let parent_node = &mut path.path[parent_idx];
+                // 获取父节点的索引，并更新 first_block
+                if let Some(ref mut parent_index) = parent_node.index {
+                    parent_index.first_block = child_extent.first_block;
+                }
+            }
+
+            depth -= 1;
+        }
 
         Ok(EOK)
     }
