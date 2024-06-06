@@ -484,3 +484,40 @@ impl Ext4InodeRef {
         self.inode.set_flags(attr.flags);
     }
 }
+
+impl Ext4Inode {
+    //    access() does not answer the "can I read/write/execute
+    //    this file?" question.  It answers a slightly different question:
+    //    "(assuming I'm a setuid binary) can the user who invoked me
+    //    read/write/execute this file?", which gives set-user-ID programs
+    //    the possibility to prevent malicious users from causing them to
+    //    read files which users shouldn't be able to read.
+    //   https://man7.org/linux/man-pages/man2/access.2.html
+    pub fn check_access(&self, uid: u16, gid: u16, umask: u16) -> bool {
+        // Extract the owner, group, and other permission bits from the inode's mode
+        let owner_perm = (self.mode & 0o700) >> 6;
+        let group_perm = (self.mode & 0o070) >> 3;
+        let other_perm = self.mode & 0o007;
+
+        let perm = if self.uid == uid {
+            owner_perm
+        } else if self.gid == gid {
+            group_perm
+        } else {
+            other_perm
+        };
+
+        let adjusted_perm = perm & !((umask & 0o700) >> 6);
+
+        // Check if the adjusted permission bits allow the requested access
+        let can_read = (self.mode & R_OK as u16) == R_OK as u16;
+        let can_write = (self.mode & W_OK as u16) == W_OK as u16;
+        let can_execute = (self.mode & X_OK as u16) == X_OK as u16;
+
+        let check_read = (adjusted_perm & R_OK as u16) == R_OK as u16;
+        let check_write = (adjusted_perm & W_OK as u16) == W_OK as u16;
+        let check_execute = (adjusted_perm & X_OK as u16) == X_OK as u16;
+
+        check_read && check_write && check_execute && can_read && can_write && can_execute
+    }
+}

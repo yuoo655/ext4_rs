@@ -55,3 +55,8 @@ pub const O_DIRECT: i32 = 0o040000;
 pub const O_NOATIME: i32 = 0o1000000;
 pub const O_PATH: i32 = 0o10000000;
 pub const O_DSYNC: i32 = 0o010000;
+/// linux access syscall flags
+pub const F_OK: i32 = 0;
+pub const R_OK: i32 = 4;
+pub const W_OK: i32 = 2;
+pub const X_OK: i32 = 1;
