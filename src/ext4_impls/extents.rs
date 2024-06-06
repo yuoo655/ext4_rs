@@ -69,7 +69,15 @@ impl Ext4 {
 
             Ok(search_path)
         } else {
-            return_errno_with_message!(Errno::ENOENT, "Extent not found");
+            search_path.path.push(ExtentPathNode {
+                header: node.header.clone(),
+                index: None,
+                extent: None,
+                position: 0,
+                pblock: 0,
+                pblock_of_node: pblock_of_node,
+            });
+            return Ok(search_path);
         }
     }
 
@@ -84,8 +92,9 @@ impl Ext4 {
         let mut search_path = self.find_extent(inode_ref, newex_first_block)?;
 
         let depth = search_path.depth as usize;
-        let node = &mut search_path.path[depth]; // Get the node at the current depth
+        let node = &search_path.path[depth]; // Get the node at the current depth
 
+        let at_root = node.pblock_of_node == 0;
         let header = node.header.clone();
 
         // Node is empty (no extents)
@@ -96,9 +105,26 @@ impl Ext4 {
         }
 
         // Insert to exsiting extent
-        if let Some(mut ex) = node.extent.clone() {
+        if let Some(mut ex) = node.extent {
             let pos = node.position;
             let last_extent_pos = header.entries_count as usize - 1;
+
+            // Try to Insert to found_ext
+            // found_ext:   |<---found_ext--->|         |<---ext2--->|
+            //              20              30         50          60
+            // insert:      |<---found_ext---><---newex--->|         |<---ext2--->|
+            //              20              30            40         50          60
+            // merge:       |<---newex--->|      |<---ext2--->|
+            //              20           40      50          60
+            if self.can_merge(&ex, &newex) {
+                self.merge_extent(&search_path, &mut ex, &newex)?;
+
+                if at_root {
+                    // we are at root
+                    *inode_ref.inode.root_extent_mut_at(node.position) = ex;
+                }
+                return Ok(());
+            }
 
             // Insert right
             // found_ext:   |<---found_ext--->|         |<---next_extent--->|
@@ -110,9 +136,9 @@ impl Ext4 {
             if pos < last_extent_pos
                 && ((ex.first_block + ex.block_count as u32) < newex.first_block)
             {
-                if let Some(next_extent) = self.get_extent_from_node(node, pos + 1) {
+                if let Some(next_extent) = self.get_extent_from_node(&node, pos + 1) {
                     if self.can_merge(&next_extent, &newex) {
-                        self.merge_extent(&mut search_path, newex, &next_extent)?;
+                        self.merge_extent(&search_path, newex, &next_extent)?;
                         return Ok(());
                     }
                 }
@@ -126,24 +152,12 @@ impl Ext4 {
             // merge:    |<---newex--->|<---found_ext--->|....|<---ext2--->|
             //           0            20                30    40          50
             if pos > 0 && (newex.first_block + newex.block_count as u32) < ex.first_block {
-                if let Some(mut prev_extent) = self.get_extent_from_node(node, pos - 1) {
+                if let Some(mut prev_extent) = self.get_extent_from_node(&node, pos - 1) {
                     if self.can_merge(&prev_extent, &newex) {
-                        self.merge_extent(&mut search_path, &mut prev_extent, &newex)?;
+                        self.merge_extent(&search_path, &mut prev_extent, &newex)?;
                         return Ok(());
                     }
                 }
-            }
-
-            // Try to Insert to found_ext
-            // found_ext:   |<---found_ext--->|         |<---ext2--->|
-            //              20              30         50          60
-            // insert:      |<---found_ext---><---newex--->|         |<---ext2--->|
-            //              20              30            40         50          60
-            // merge:       |<---newex--->|      |<---ext2--->|
-            //              20           40      50          60
-            if self.can_merge(&ex, &newex) {
-                self.merge_extent(&mut search_path, &mut ex, &newex)?;
-                return Ok(());
             }
         }
 
@@ -202,23 +216,12 @@ impl Ext4 {
 
     fn merge_extent(
         &self,
-        search_path: &mut SearchPath,
+        search_path: &SearchPath,
         left_ext: &mut Ext4Extent,
         right_ext: &Ext4Extent,
     ) -> Result<()> {
         let depth = search_path.depth as usize;
-        // Get the node at the current depth
-        let node = &mut search_path.path[depth];
-
-        // Ensure that the extents can be merged
-        assert!(self.can_merge(&left_ext, &right_ext));
-
-        // Update the length of the left extent to include the right extent
         left_ext.block_count += right_ext.block_count;
-
-        if depth == 0 {
-            return Ok(());
-        }
 
         Ok(())
     }
@@ -241,7 +244,6 @@ impl Ext4 {
                 (*inode_ref.inode.root_extent_header_mut()).entries_count += 1;
 
                 self.write_back_inode(inode_ref);
-
                 return Ok(());
             }
             // Not empty, insert at search result pos + 1
