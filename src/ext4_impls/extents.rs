@@ -26,6 +26,7 @@ impl Ext4 {
         let mut depth = node.header.depth;
 
         // Traverse down the tree if depth > 0
+        let mut pblock_of_node = 0;
         while depth > 0 {
             let index_pos = node.binsearch_idx(lblock);
             if let Some(pos) = index_pos {
@@ -38,6 +39,7 @@ impl Ext4 {
                     extent: None,
                     position: pos,
                     pblock: next_block as u64,
+                    pblock_of_node: pblock_of_node,
                 });
 
                 let next_block = search_path.path.last().unwrap().index.unwrap().leaf_lo;
@@ -46,12 +48,14 @@ impl Ext4 {
                     .read_offset(next_block as usize * BLOCK_SIZE);
                 node = ExtentNode::load_from_data(&next_data, false)?;
                 depth -= 1;
+                search_path.depth += 1;
+                pblock_of_node = next_block as usize;
             } else {
                 return_errno_with_message!(Errno::ENOENT, "Extentindex not found");
             }
         }
 
-        // Handle the case where depth is 0 (root node)
+        // Handle the case where depth is 0
         if let Some((extent, pos)) = node.binsearch_extent(lblock) {
             search_path.path.push(ExtentPathNode {
                 header: node.header.clone(),
@@ -59,8 +63,8 @@ impl Ext4 {
                 extent: Some(extent),
                 position: pos,
                 pblock: extent.get_pblock(),
+                pblock_of_node: pblock_of_node,
             });
-            search_path.depth = node.header.depth;
             search_path.maxdepth = node.header.depth;
 
             Ok(search_path)
@@ -87,7 +91,7 @@ impl Ext4 {
         // Node is empty (no extents)
         if header.entries_count == 0 {
             // If the node is empty, insert the new extent directly
-            self.insert_new_extent(inode_ref,&mut search_path, newex)?;
+            self.insert_new_extent(inode_ref, &mut search_path, newex)?;
             return Ok(());
         }
 
@@ -235,7 +239,7 @@ impl Ext4 {
             if header.entries_count == 0 {
                 *inode_ref.inode.root_extent_mut_at(node.position) = *new_extent;
                 (*inode_ref.inode.root_extent_header_mut()).entries_count += 1;
-                
+
                 self.write_back_inode(inode_ref);
 
                 return Ok(());
@@ -247,7 +251,7 @@ impl Ext4 {
 
 
         // insert at pblock
-
+        
 
         return_errno_with_message!(Errno::ENOTSUP, "Not supported insert extent at nonroot");
     }
@@ -260,5 +264,530 @@ impl Ext4 {
     ) -> Result<()> {
         // Implement logic to create a new leaf
         unimplemented!()
+    }
+}
+
+
+impl Ext4 {
+    // Assuming init state
+    // depth 0 (root node)
+    // +--------+--------+--------+
+    // |  idx1  |  idx2  |  idx3  |
+    // +--------+--------+--------+
+    //     |         |         |
+    //     v         v         v
+    //
+    // depth 1 (internal node)
+    // +--------+...+--------+  +--------+...+--------+ ......
+    // |  idx1  |...|  idxn  |  |  idx1  |...|  idxn  | ......
+    // +--------+...+--------+  +--------+...+--------+ ......
+    //     |           |         |             |
+    //     v           v         v             v
+    //
+    // depth 2 (leaf nodes)
+    // +--------+...+--------+  +--------+...+--------+  ......
+    // | ext1   |...| extn   |  | ext1   |...| extn   |  ......
+    // +--------+...+--------+  +--------+...+--------+  ......
+    pub fn extent_remove_space(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        from: u32,
+        to: u32,
+    ) -> Result<usize> {
+        // log::info!("Remove space from {:x?} to {:x?}", from, to);
+        let mut search_path = self.find_extent(inode_ref, from)?;
+
+        // for i in search_path.path.iter() {
+        //     log::info!("from Path: {:x?}", i);
+        // }
+
+        let depth = search_path.depth as usize;
+
+        /* If we do remove_space inside the range of an extent */
+        let mut ex = search_path.path[depth].extent.clone().unwrap();
+        if ex.get_first_block() < from
+            && to < (ex.get_first_block() + ex.get_actual_len() as u32 - 1)
+        {
+            let mut newex = Ext4Extent::default();
+            let unwritten = ex.is_unwritten();
+            let ee_block = ex.first_block;
+            let block_count = ex.block_count;
+            let newblock = to + 1 - ee_block + ex.get_pblock() as u32;
+            ex.block_count = from as u16 - ee_block as u16;
+
+            if unwritten {
+                ex.mark_unwritten();
+            }
+            newex.first_block = to + 1;
+            newex.block_count = (ee_block + block_count as u32 - 1 - to) as u16;
+            newex.start_lo = newblock as u32 & 0xffffffff;
+            newex.start_hi = (((newblock as u32) << 31) << 1) as u16;
+
+            self.insert_extent(inode_ref, &mut newex)?;
+
+            return Ok(EOK);
+        }
+
+        // log::warn!("Remove space in depth: {:x?}", depth);
+
+        let mut i = depth as isize;
+
+        while i >= 0 {
+            // we are at the leaf node
+            // depth 0 (root node)
+            // +--------+--------+--------+
+            // |  idx1  |  idx2  |  idx3  |
+            // +--------+--------+--------+
+            //              |path
+            //              v
+            //              idx2
+            // depth 1 (internal node)
+            // +--------+--------+--------+ ......
+            // |  idx1  |  idx2  |  idx3  | ......
+            // +--------+--------+--------+ ......
+            //              |path
+            //              v
+            //              ext2
+            // depth 2 (leaf nodes)
+            // +--------+--------+..+--------+
+            // | ext1   | ext2   |..|last_ext|
+            // +--------+--------+..+--------+
+            //            ^            ^
+            //            |            |
+            //            from         to(exceed last ext, rest of the extents will be removed)
+            if i as usize == depth {
+                let node_pblock = search_path.path[i as usize].pblock_of_node;
+
+                let ext4block =
+                    Block::load(self.block_device.clone(), node_pblock as usize * BLOCK_SIZE);
+
+                let header = search_path.path[i as usize].header.clone();
+                let entries_count = header.entries_count;
+
+                let first_ex: Ext4Extent = ext4block.read_offset_as(size_of::<Ext4ExtentHeader>());
+                let last_ex: Ext4Extent = ext4block.read_offset_as(
+                    size_of::<Ext4ExtentHeader>()
+                        + size_of::<Ext4Extent>() * (entries_count - 1) as usize,
+                );
+
+                let mut leaf_from = first_ex.first_block;
+                let mut leaf_to = last_ex.first_block + last_ex.get_actual_len() as u32 - 1;
+
+                if leaf_from < from {
+                    leaf_from = from;
+                }
+                if leaf_to > to {
+                    leaf_to = to;
+                }
+                // log::trace!("from {:x?} to {:x?} leaf_from {:x?} leaf_to {:x?}", from, to, leaf_from, leaf_to);
+
+                self.ext_remove_leaf(inode_ref, &mut search_path, leaf_from, leaf_to)?;
+
+                i -= 1;
+                continue;
+            }
+
+            // log::trace!("---at level---{:?}\n", i);
+
+            // we are at index
+            // example i=1, depth=2
+            // depth 0 (root node) - 处理的索引节点
+            // +--------+--------+--------+
+            // |  idx1  |  idx2  |  idx3  |
+            // +--------+--------+--------+
+            //            |path     | 下一个要处理的节点(more_to_rm?)
+            //            v         v
+            //           idx2
+            //
+            // depth 1 (internal node)
+            // +--------++--------+...+--------+
+            // |  idx1  ||  idx2  |...|  idxn  |
+            // +--------++--------+...+--------+
+            //            |path
+            //            v
+            //            ext2
+            // depth 2 (leaf nodes)
+            // +--------+--------+..+--------+
+            // | ext1   | ext2   |..|last_ext|
+            // +--------+--------+..+--------+
+            let header = search_path.path[i as usize].header.clone();
+            if self.more_to_rm(&search_path.path[i as usize], to) {
+                // todo
+                // load next idx
+
+                // go to this node's child
+                i += 1;
+            } else {
+                if i > 0 {
+                    // empty
+                    if header.entries_count == 0 {
+                        self.ext_remove_idx(inode_ref, &mut search_path, i as u16 - 1)?;
+                    }
+                }
+
+                let idx = i as isize;
+                if idx - 1 < 0 {
+                    break;
+                }
+                i -= 1;
+            }
+        }
+
+        Ok(EOK)
+    }
+
+    pub fn ext_remove_leaf(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        path: &mut SearchPath,
+        from: u32,
+        to: u32,
+    ) -> Result<usize> {
+        // log::trace!("Remove leaf from {:x?} to {:x?}", from, to);
+
+        // depth 0 (root node)
+        // +--------+--------+--------+
+        // |  idx1  |  idx2  |  idx3  |
+        // +--------+--------+--------+
+        //     |         |         |
+        //     v         v         v
+        //     ^
+        //     Current position
+        let depth = inode_ref.inode.root_header_depth();
+        let mut header = path.path[depth as usize].header;
+
+        let mut new_entry_count = header.entries_count;
+        let mut ex2 = Ext4Extent::default();
+
+        /* find where to start removing */
+        let pos = path.path[depth as usize].position;
+        let entry_count = header.entries_count;
+
+        // depth 1 (internal node)
+        // +--------+...+--------+  +--------+...+--------+ ......
+        // |  idx1  |...|  idxn  |  |  idx1  |...|  idxn  | ......
+        // +--------+...+--------+  +--------+...+--------+ ......
+        //     |           |         |             |
+        //     v           v         v             v
+        //     ^
+        //     Current loaded node
+
+        // load node data
+        let node_disk_pos = path.path[depth as usize].pblock_of_node * BLOCK_SIZE;
+        let mut ext4block = Block::load(self.block_device.clone(), node_disk_pos);
+
+        // depth 2 (leaf nodes)
+        // +--------+...+--------+  +--------+...+--------+  ......
+        // | ext1   |...| extn   |  | ext1   |...| extn   |  ......
+        // +--------+...+--------+  +--------+...+--------+  ......
+        //     ^
+        //     Current start extent
+
+        // start from pos
+        for i in pos..entry_count as usize {
+            let ex: &mut Ext4Extent = ext4block
+                .read_offset_as_mut(size_of::<Ext4ExtentHeader>() + i * size_of::<Ext4Extent>());
+
+            if ex.first_block > to {
+                break;
+            }
+
+            let mut new_len = 0;
+            let mut start = ex.first_block;
+            let mut new_start = ex.first_block;
+
+            let mut len = ex.get_actual_len();
+            let mut newblock = ex.get_pblock();
+
+            // Initial state:
+            // +--------+...+--------+  +--------+...+--------+  ......
+            // | ext1   |...| ext2   |  | ext3   |...| extn   |  ......
+            // +--------+...+--------+  +--------+...+--------+  ......
+            //               ^                    ^
+            //              from                  to
+
+            // Case 1: Remove a portion within the extent
+            if start < from {
+                len -= from as u16 - start as u16;
+                new_len = from - start;
+                start = from;
+            } else {
+                // Case 2: Adjust extent that partially overlaps the 'to' boundary
+                if start + len as u32 - 1 > to {
+                    new_len = start + len as u32 - 1 - to;
+                    len -= new_len as u16;
+
+                    new_start = to + 1;
+
+                    newblock += (to + 1 - start) as u64;
+
+                    ex2 = *ex;
+                }
+            }
+
+            // After removing range from `from` to `to`:
+            // +--------+...+--------+  +--------+...+--------+  ......
+            // | ext1   |...[removed]|  |[removed]|...| extn   |  ......
+            // +--------+...+--------+  +--------+...+--------+  ......
+            //               ^                    ^
+            //              from                  to
+            //                                  new_start
+
+            // Remove blocks within the extent
+            self.ext_remove_blocks(inode_ref, ex, start, start + len as u32 - 1);
+
+            ex.first_block = new_start;
+            // log::trace!("after remove leaf ex first_block {:x?}", ex.first_block);
+
+            if new_len == 0 {
+                new_entry_count -= 1;
+            } else {
+                let unwritten = ex.is_unwritten();
+                ex.store_pblock(newblock as u64);
+                ex.block_count = new_len as u16;
+
+                if unwritten {
+                    ex.mark_unwritten();
+                }
+            }
+        }
+
+        // Move remaining extents to the start:
+        // Before:
+        // +--------+--------+...+--------+
+        // | ext3   | ext4   |...| extn   |
+        // +--------+--------+...+--------+
+        //      ^       ^            ^
+        // After:
+        // +--------+...+--------+--------+
+        // | ext1   |...| extn   | [empty]|
+        // +--------+...+--------+--------+
+
+        // Move any remaining extents to the starting position of the node.
+        if ex2.first_block > 0 {
+            let start_index = size_of::<Ext4ExtentHeader>() + pos * size_of::<Ext4Extent>();
+            let end_index =
+                size_of::<Ext4ExtentHeader>() + entry_count as usize * size_of::<Ext4Extent>();
+            let remaining_extents: Vec<u8> = ext4block.data[start_index..end_index].to_vec();
+            ext4block.data[size_of::<Ext4ExtentHeader>()
+                ..size_of::<Ext4ExtentHeader>() + remaining_extents.len()]
+                .copy_from_slice(&remaining_extents);
+        }
+
+        // Update the entries count in the header
+        header.entries_count = new_entry_count;
+
+        /*
+         * If the extent pointer is pointed to the first extent of the node, and
+         * there's still extents presenting, we may need to correct the indexes
+         * of the paths.
+         */
+        if pos == 0 && new_entry_count > 0 {
+            self.ext_correct_indexes(path)?;
+        }
+
+        /* if this leaf is free, then we should
+         * remove it from index block above */
+        if new_entry_count == 0 {
+            self.ext_remove_idx(inode_ref, path, depth - 1)?;
+        } else if depth > 0 {
+            // go to next index
+            path.path[depth as usize - 1].position += 1;
+        }
+
+        Ok(EOK)
+    }
+
+    fn ext_remove_index_block(&self, inode_ref: &mut Ext4InodeRef, index: &mut Ext4ExtentIndex) {
+        let block_to_free = index.get_pblock();
+
+        // log::trace!("remove index's block {:x?}", block_to_free);
+        self.balloc_free_blocks(inode_ref, block_to_free as _, 1);
+    }
+
+    fn ext_remove_idx(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        path: &mut SearchPath,
+        depth: u16,
+    ) -> Result<usize> {
+        // log::trace!("Remove index at depth {:x?}", depth);
+
+        // Initial state:
+        // +--------+--------+--------+
+        // |  idx1  |  idx2  |  idx3  |
+        // +--------+--------+--------+
+        //           ^
+        // Current index to remove (pos=1)
+
+        // Removing index:
+        // +--------+--------+--------+
+        // |  idx1  |[empty] |  idx3  |
+        // +--------+--------+--------+
+        //           ^
+        // Current index to remove
+
+        // After moving remaining indexes:
+        // +--------+--------+--------+
+        // |  idx1  |  idx3  |[empty] |
+        // +--------+--------+--------+
+        //           ^
+        // Current index to remove
+
+        let mut i = depth as usize;
+        let mut header = path.path[i].header;
+
+        // 获取要删除的索引块
+        let leaf_block = path.path[i].index.unwrap().get_pblock();
+
+        // 如果当前索引不是最后一个索引，将后续的索引前移
+        if path.path[i].position != header.entries_count as usize - 1 {
+            let start_pos = size_of::<Ext4ExtentHeader>()
+                + path.path[i].position * size_of::<Ext4ExtentIndex>();
+            let end_pos = size_of::<Ext4ExtentHeader>()
+                + (header.entries_count as usize) * size_of::<Ext4ExtentIndex>();
+
+            let node_disk_pos = path.path[i].pblock_of_node as usize * BLOCK_SIZE;
+            let mut ext4block = Block::load(self.block_device.clone(), node_disk_pos);
+
+            let remaining_indexes: Vec<u8> =
+                ext4block.data[start_pos + size_of::<Ext4ExtentIndex>()..end_pos].to_vec();
+            ext4block.data[start_pos..start_pos + remaining_indexes.len()]
+                .copy_from_slice(&remaining_indexes);
+            let remaining_size = remaining_indexes.len();
+
+            // 清空剩余位置
+            let empty_start = start_pos + remaining_size;
+            let empty_end = end_pos;
+            ext4block.data[empty_start..empty_end].fill(0);
+        }
+
+        // 更新头部的entries_count
+        header.entries_count -= 1;
+
+        // 释放索引块
+        self.ext_remove_index_block(inode_ref, &mut path.path[i].index.unwrap());
+
+        // Updating parent index if necessary:
+        // +--------+--------+--------+
+        // |  idx1  |  idx3  |[empty] |
+        // +--------+--------+--------+
+        //           ^
+        // Updated parent index if necessary
+
+        // 如果当前层不是根层，需要检查是否需要更新父节点索引
+        while i > 0 {
+            if path.path[i].position != 0 {
+                break;
+            }
+
+            let parent_idx = i - 1;
+            let parent_index = &mut path.path[parent_idx].index.unwrap();
+            let current_index = &path.path[i].index.unwrap();
+
+            parent_index.first_block = current_index.first_block;
+            self.write_back_inode(inode_ref);
+
+            i -= 1;
+        }
+
+        Ok(EOK)
+    }
+
+    fn ext_correct_indexes(&self, path: &mut SearchPath) -> Result<usize> {
+        // Initial state:
+        // +--------+--------+--------+
+        // |  ext1  |  ext2  |  ext3  |
+        // +--------+--------+--------+
+        // ^
+        // pos=0, new_entry_count=3
+
+        // Removing extents from 'from' to 'to':
+        // +--------+--------+--------+
+        // |[empty] |  ext2  |  ext3  |
+        // +--------+--------+--------+
+        // ^
+        // pos=0, new_entry_count=2
+
+        // Move remaining extents to the starting position:
+        // +--------+--------+--------+
+        // |  ext2  |  ext3  |[empty] |
+        // +--------+--------+--------+
+        // ^
+        // pos=0, new_entry_count=2
+
+        // Correct indexes if extent pointer is at the first extent:
+        // +--------+--------+--------+
+        // |  ext2  |  ext3  |[empty] |
+        // +--------+--------+--------+
+        // ^
+        // pos=0, new_entry_count=2
+
+        let mut depth = path.depth as usize;
+
+        while depth > 0 {
+            let parent_idx = depth - 1;
+
+            // 获取当前层的 extent
+            if let Some(child_extent) = path.path[depth].extent {
+                // 获取父节点
+                let parent_node = &mut path.path[parent_idx];
+                // 获取父节点的索引，并更新 first_block
+                if let Some(ref mut parent_index) = parent_node.index {
+                    parent_index.first_block = child_extent.first_block;
+                }
+            }
+
+            depth -= 1;
+        }
+
+        Ok(EOK)
+    }
+
+    fn ext_remove_blocks(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        ex: &mut Ext4Extent,
+        from: u32,
+        to: u32,
+    ) {
+        let len = to - from + 1;
+        let num = from - ex.first_block;
+        let start: u32 = ex.get_pblock() as u32 + num;
+        self.balloc_free_blocks(inode_ref, start as _, len);
+    }
+
+    pub fn more_to_rm(&self, path: &ExtentPathNode, to: u32) -> bool {
+        let header = path.header.clone();
+
+        // No Sibling exists
+        if header.entries_count == 1 {
+            return false;
+        }
+
+        let pos = path.position;
+        if pos > header.entries_count as usize - 1 {
+            return false;
+        }
+
+        // Check if index is out of bounds
+        if let Some(index) = path.index {
+            let last_index_pos = header.entries_count as usize - 1;
+            let node_disk_pos = path.pblock_of_node * BLOCK_SIZE;
+            let ext4block = Block::load(self.block_device.clone(), node_disk_pos);
+            let last_index: Ext4ExtentIndex =
+                ext4block.read_offset_as(size_of::<Ext4ExtentIndex>() * last_index_pos);
+
+            if path.position > last_index_pos || index.first_block > last_index.first_block {
+                return false;
+            }
+
+            // Check if index's first_block is greater than 'to'
+            if index.first_block > to {
+                return false;
+            }
+        }
+
+        true
     }
 }
