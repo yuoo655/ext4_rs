@@ -1,9 +1,9 @@
 use crate::prelude::*;
 
 use crate::ext4_defs::*;
-use crate::utils::path_check;
 use crate::return_errno;
 use crate::return_errno_with_message;
+use crate::utils::path_check;
 
 /// fuser interface for ext4
 impl Ext4 {
@@ -161,7 +161,6 @@ impl Ext4 {
 
     /// Remove a file.
     fn fuse_unlink(&mut self, parent: u64, name: &str) -> Result<usize> {
-
         // unlink actual remove a file
 
         // get child inode num
@@ -180,7 +179,7 @@ impl Ext4 {
         let p = &name[nameoff as usize..];
         let len = path_check(p, &mut is_goal);
 
-        // load parent 
+        // load parent
         let mut parent_inode_ref = self.get_inode_ref(parent_inode);
 
         let r = self.unlink(
@@ -190,11 +189,30 @@ impl Ext4 {
         )?;
 
         Ok(EOK)
-
     }
 
     /// Remove a directory.
-    fn fuse_rmdir(&mut self, parent: u64, name: &str) {}
+    fn fuse_rmdir(&mut self, parent: u64, name: &str) -> Result<usize> {
+        let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+
+        let r = self.dir_find_entry(parent as u32, name, &mut search_result)?;
+
+        let mut parent_inode_ref = self.get_inode_ref(parent as u32);
+        let mut child_inode_ref = self.get_inode_ref(search_result.dentry.inode);
+
+        self.truncate_inode(&mut child_inode_ref, 0)?;
+
+        self.unlink(&mut parent_inode_ref, &mut child_inode_ref, name)?;
+
+        self.write_back_inode(&mut parent_inode_ref);
+
+        // to do
+        // ext4_inode_set_del_time
+        // ext4_inode_set_links_cnt
+        // ext4_fs_free_inode(&child)
+
+        return Ok(EOK);
+    }
 
     /// Create a symbolic link.
     fn fuse_symlink(&mut self, parent: u64, link_name: &str, target: &str) -> Result<usize> {
