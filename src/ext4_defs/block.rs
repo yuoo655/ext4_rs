@@ -20,6 +20,17 @@ impl Block {
         }
     }
 
+    /// Load the block from inode block
+    pub fn load_inode_root_block(data: &[u32; 15]) -> Self {
+        let data_bytes: &[u8; 60] = unsafe {
+            core::mem::transmute(data)
+        };
+        Block {
+            disk_offset: 0, 
+            data: data_bytes.to_vec(),
+        }
+    }
+
     /// Read the block as a specific type.
     pub fn read_as<T: Copy>(&self) -> T {
         unsafe {

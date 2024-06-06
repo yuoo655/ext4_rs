@@ -249,9 +249,7 @@ impl Ext4 {
             return Ok(());
         }
 
-
         // insert at pblock
-        
 
         return_errno_with_message!(Errno::ENOTSUP, "Not supported insert extent at nonroot");
     }
@@ -266,7 +264,6 @@ impl Ext4 {
         unimplemented!()
     }
 }
-
 
 impl Ext4 {
     // Assuming init state
@@ -358,6 +355,28 @@ impl Ext4 {
             if i as usize == depth {
                 let node_pblock = search_path.path[i as usize].pblock_of_node;
 
+                let header = search_path.path[i as usize].header.clone();
+                let entries_count = header.entries_count;
+
+                // we are at root
+                if node_pblock == 0 {
+                    let first_ex = inode_ref.inode.root_extent_at(0);
+                    let last_ex = inode_ref.inode.root_extent_at(entries_count as usize - 1);
+
+                    let mut leaf_from = first_ex.first_block;
+                    let mut leaf_to = last_ex.first_block + last_ex.get_actual_len() as u32 - 1;
+                    if leaf_from < from {
+                        leaf_from = from;
+                    }
+                    if leaf_to > to {
+                        leaf_to = to;
+                    }
+                    // log::trace!("from {:x?} to {:x?} leaf_from {:x?} leaf_to {:x?}", from, to, leaf_from, leaf_to);
+                    self.ext_remove_leaf(inode_ref, &mut search_path, leaf_from, leaf_to)?;
+
+                    i -= 1;
+                    continue;
+                }
                 let ext4block =
                     Block::load(self.block_device.clone(), node_pblock as usize * BLOCK_SIZE);
 
@@ -379,7 +398,13 @@ impl Ext4 {
                 if leaf_to > to {
                     leaf_to = to;
                 }
-                // log::trace!("from {:x?} to {:x?} leaf_from {:x?} leaf_to {:x?}", from, to, leaf_from, leaf_to);
+                // log::trace!(
+                //     "from {:x?} to {:x?} leaf_from {:x?} leaf_to {:x?}",
+                //     from,
+                //     to,
+                //     leaf_from,
+                //     leaf_to
+                // );
 
                 self.ext_remove_leaf(inode_ref, &mut search_path, leaf_from, leaf_to)?;
 
@@ -474,7 +499,13 @@ impl Ext4 {
 
         // load node data
         let node_disk_pos = path.path[depth as usize].pblock_of_node * BLOCK_SIZE;
-        let mut ext4block = Block::load(self.block_device.clone(), node_disk_pos);
+
+        let mut ext4block = if node_disk_pos == 0 {
+            // we are at root
+            Block::load_inode_root_block(&inode_ref.inode.block)
+        } else {
+            Block::load(self.block_device.clone(), node_disk_pos)
+        };
 
         // depth 2 (leaf nodes)
         // +--------+...+--------+  +--------+...+--------+  ......
@@ -516,11 +547,8 @@ impl Ext4 {
                 if start + len as u32 - 1 > to {
                     new_len = start + len as u32 - 1 - to;
                     len -= new_len as u16;
-
                     new_start = to + 1;
-
                     newblock += (to + 1 - start) as u64;
-
                     ex2 = *ex;
                 }
             }
@@ -589,6 +617,10 @@ impl Ext4 {
         /* if this leaf is free, then we should
          * remove it from index block above */
         if new_entry_count == 0 {
+            // if we are at root?
+            if path.path[depth as usize].pblock_of_node == 0 {
+                return Ok(EOK);
+            }
             self.ext_remove_idx(inode_ref, path, depth - 1)?;
         } else if depth > 0 {
             // go to next index
