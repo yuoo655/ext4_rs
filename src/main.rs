@@ -105,8 +105,6 @@ fn main() {
     let disk = Arc::new(Disk {});
     let ext4 = Ext4::open(disk);
 
-
-    
     // dir
     log::info!("----mkdir----");
     for i in 0..10 {
@@ -128,5 +126,13 @@ fn main() {
 
     let path = "dir_to_remove";
     let r = ext4.dir_remove(ROOT_INODE, &path);
+
+
+    let inode_mode = InodeFileType::S_IFREG.bits();
+    let inode_ref = ext4.create(ROOT_INODE, "64M.txt",inode_mode ).unwrap();
+    // 64M
+    const WRITE_SIZE: usize = (0x100000 * 64);
+    let write_buf = vec![0x41 as u8; WRITE_SIZE];
+    let r = ext4.write_at(inode_ref.inode_num, 0, &write_buf);
 
 }
