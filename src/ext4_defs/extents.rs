@@ -40,7 +40,7 @@ pub struct Ext4ExtentIndex {
 }
 
 /// Structure representing an Ext4 extent.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct Ext4Extent {
     /// First file block number that this extent covers.
@@ -86,7 +86,8 @@ pub struct ExtentPathNode {
     pub index: Option<Ext4ExtentIndex>,  // for convenience(you can get index through pos of extent node)
     pub extent: Option<Ext4Extent>,      // same reason as above
     pub position: usize,                 // position of search result in the node
-    pub pblock: u64,                     // disk position of this node
+    pub pblock: u64,                     // physical block of search result
+    pub pblock_of_node: usize            // physical block of this node
 }
 
 /// load methods for Ext4ExtentHeader
@@ -408,6 +409,13 @@ impl ExtentNode {
     }
 }
 
+impl Ext4ExtentIndex {
+    /// Get the physical block number to which this index points.
+    pub fn get_pblock(&self) -> u64 {
+        ((self.leaf_hi as u64) << 32) | (self.leaf_lo as u64)
+    }
+}
+
 impl Ext4Extent {
     /// Get the first block number(logical) of the extent.
     pub fn get_first_block(&self) -> u32 {
@@ -470,6 +478,17 @@ impl Ext4Extent {
     pub fn mark_unwritten(&mut self) {
         self.block_count |= EXT_INIT_MAX_LEN;
     }
+    
+    /// Get the last file block number that this extent covers.
+    pub fn get_last_block(&self) -> u32 {
+        self.first_block + self.block_count as u32 - 1
+    }
+
+    /// Set the last file block number for this extent.
+    pub fn set_last_block(&mut self, last_block: u32) {
+        self.block_count = (last_block - self.first_block + 1) as u16;
+    }
+
 }
 
 
