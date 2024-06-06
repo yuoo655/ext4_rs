@@ -409,6 +409,10 @@ impl Ext4 {
         let mut parent_inode_ref = self.get_inode_ref(parent);
         let mut child_inode_ref = self.get_inode_ref(search_result.dentry.inode);
 
+        if self.dir_has_entry(child_inode_ref.inode_num){
+            return_errno_with_message!(Errno::ENOTSUP, "rm dir with children not supported")
+        }
+        
         self.truncate_inode(&mut child_inode_ref, 0)?;
 
         self.unlink(&mut parent_inode_ref, &mut child_inode_ref, path)?;
