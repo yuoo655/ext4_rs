@@ -433,6 +433,16 @@ impl Ext4 {
         inode_ref.inode.check_access(uid, gid, mode, mask as u16)
     }
 
+    /// Get file system statistics.
+    /// Linux stat syscall defines:
+    /// int stat(const char *restrict pathname, struct stat *restrict statbuf);
+    /// int fstatat(int dirfd, const char *restrict pathname, struct stat *restrict statbuf, int flags);
+    fn fuse_statfs(&mut self, ino: u64) -> Result<LinuxStat> {
+        let inode_ref = self.get_inode_ref(ino as u32);
+        let linux_stat = LinuxStat::from_inode_ref(&inode_ref);
+        Ok(linux_stat)
+    }
+
     /// Initialize filesystem.
     /// Called before any other filesystem method.
     /// The kernel module connection can be configured using the KernelConfig object
@@ -513,11 +523,6 @@ impl Ext4 {
     /// be flushed, not the meta data. fh will contain the value set by the opendir
     /// method, or will be undefined if the opendir method didn't set any value.
     fn fuse_fsyncdir(&mut self, ino: u64, fh: u64, datasync: bool) {
-        unimplemented!();
-    }
-
-    /// Get file system statistics.
-    fn fuse_statfs(&mut self, _ino: u64) {
         unimplemented!();
     }
 
