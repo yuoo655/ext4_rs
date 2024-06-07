@@ -147,15 +147,17 @@ impl Ext4Superblock {
 
     /// Returns the number of block groups.
     pub fn block_groups_count(&self) -> u32 {
-        let cnt = (((self.blocks_count_hi.to_le() as u64) << 32) as u32 | self.blocks_count_lo)
-            / self.blocks_per_group;
+        let blocks_count = (self.blocks_count_hi as u64) << 32 | self.blocks_count_lo as u64;
 
-        // fix me
-        if cnt == 0 {
-            1
-        } else {
-            cnt
+        let blocks_per_group = self.blocks_per_group as u64;
+
+        let mut block_group_count = blocks_count / blocks_per_group;
+
+        if (blocks_count % blocks_per_group) != 0 {
+            block_group_count += 1;
         }
+
+        block_group_count as u32
     }
 
     pub fn blocks_count(&self) -> u32 {
@@ -180,7 +182,7 @@ impl Ext4Superblock {
         let block_group_count = self.block_groups_count();
         let inodes_per_group = self.inodes_per_group;
 
-        let total_inodes = ((self.inodes_count as u64) << 32) as u32;
+        let total_inodes = self.inodes_count;
         if bgid < block_group_count - 1 {
             inodes_per_group
         } else {
