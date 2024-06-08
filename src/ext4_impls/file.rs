@@ -152,16 +152,16 @@ impl Ext4 {
 
     /// Read data from a file at a given offset
     ///
-    /// Parms:
+    /// Params:
     /// inode: u32 - inode number of the file
     /// offset: usize - offset from where to read
-    /// buf: &mut [u8] - buffer to read the data into
+    /// read_buf: &mut [u8] - buffer to read the data into
     ///
     /// Returns:
     /// Result<usize> - number of bytes read
     pub fn read_at(&self, inode: u32, offset: usize, read_buf: &mut [u8]) -> Result<usize> {
         // read buf is empty, return 0
-        let read_buf_len = read_buf.len();
+        let mut read_buf_len = read_buf.len();
         if read_buf_len == 0 {
             return Ok(0);
         }
@@ -178,21 +178,26 @@ impl Ext4 {
         }
 
         // adjust the read buffer size if the read buffer size is greater than the file size
+        if offset + read_buf_len > file_size as usize {
+            read_buf_len = file_size as usize - offset;
+        }
+
+        // adjust the read buffer size if the read buffer size is greater than the file size
         let size_to_read = min(read_buf_len, file_size as usize - offset);
 
-        // calculate the start block
-        let mut iblock = offset / BLOCK_SIZE;
+        // calculate the start block and unaligned size
+        let iblock_start = offset / BLOCK_SIZE;
+        let iblock_last = (offset + size_to_read + BLOCK_SIZE - 1) / BLOCK_SIZE; // round up to include the last partial block
+        let unaligned_start_offset = offset % BLOCK_SIZE;
 
-        // unaligned size
-        let unaligned_size = size_to_read % BLOCK_SIZE as usize;
-
+        // Buffer to keep track of read bytes
         let mut cursor = 0;
         let mut total_bytes_read = 0;
+        let mut iblock = iblock_start;
 
-        // adjust first block with unaligned size, remaining blocks are all full blocks
-        if unaligned_size > 0 {
-            // read the first block
-            let adjust_read_size = min(BLOCK_SIZE - unaligned_size, size_to_read as usize);
+        // Unaligned read at the beginning
+        if unaligned_start_offset > 0 {
+            let adjust_read_size = min(BLOCK_SIZE - unaligned_start_offset, size_to_read);
 
             // get iblock physical block id
             let pblock_idx = self.get_pblock_idx(&inode_ref, iblock as u32)?;
@@ -203,7 +208,9 @@ impl Ext4 {
                 .read_offset(pblock_idx as usize * BLOCK_SIZE);
 
             // copy data to read buffer
-            read_buf[cursor..cursor + adjust_read_size].copy_from_slice(&data[..adjust_read_size]);
+            read_buf[cursor..cursor + adjust_read_size].copy_from_slice(
+                &data[unaligned_start_offset..unaligned_start_offset + adjust_read_size],
+            );
 
             // update cursor and total bytes read
             cursor += adjust_read_size;
@@ -232,7 +239,7 @@ impl Ext4 {
             iblock += 1;
         }
 
-        Ok(total_bytes_read)
+        Ok(min(total_bytes_read, size_to_read))
     }
 
     /// Write data to a file at a given offset
@@ -259,7 +266,7 @@ impl Ext4 {
 
         // Calculate the start and end block index
         let iblock_start = offset / BLOCK_SIZE;
-        let iblock_last = (offset + write_buf_len) / BLOCK_SIZE;
+        let iblock_last = (offset + write_buf_len + BLOCK_SIZE - 1) / BLOCK_SIZE; // round up to include the last partial block
 
         // start block index
         let mut iblk_idx = iblock_start;
@@ -273,7 +280,7 @@ impl Ext4 {
 
         // Unaligned write
         if unaligned > 0 {
-            let len = core::cmp::min(write_buf_len, BLOCK_SIZE - unaligned);
+            let len = min(write_buf_len, BLOCK_SIZE - unaligned);
             // Get the physical block id, if the block is not present, append a new block
             let pblock_idx = if iblk_idx < ifile_blocks as usize {
                 self.get_pblock_idx(&inode_ref, iblk_idx as u32)?
@@ -299,14 +306,13 @@ impl Ext4 {
         let mut fblock_count = 0;
 
         while written < write_buf_len {
-            while iblk_idx < iblock_last {
+            while iblk_idx < iblock_last && written < write_buf_len {
                 // Get the physical block id, if the block is not present, append a new block
                 let pblock_idx = if iblk_idx < ifile_blocks as usize {
                     self.get_pblock_idx(&inode_ref, iblk_idx as u32)?
                 } else {
                     // physical block not exist, append a new block
                     self.append_inode_pblk(&mut inode_ref)?
-                    // self.append_inode_pblk_with_goal(&mut inode_ref, fblock_start)?
                 };
                 if fblock_start == 0 {
                     fblock_start = pblock_idx;
@@ -321,18 +327,22 @@ impl Ext4 {
                 iblk_idx += 1;
             }
 
-            // to do (write contiguos blocks at once)
-            let len = core::cmp::min(fblock_count as usize * BLOCK_SIZE, write_buf_len - written);
+            // Write contiguous blocks at once
+            let len = min(
+                fblock_count as usize * BLOCK_SIZE,
+                write_buf_len - written,
+            );
+
             for i in 0..fblock_count {
                 let block_offset = fblock_start as usize * BLOCK_SIZE + i as usize * BLOCK_SIZE;
                 let mut block = Block::load(self.block_device.clone(), block_offset);
-                block.write_offset(0, &write_buf[written..written + BLOCK_SIZE], BLOCK_SIZE);
+                let write_size = min(BLOCK_SIZE, write_buf_len - written);
+                block.write_offset(0, &write_buf[written..written + write_size], write_size);
                 block.sync_blk_to_disk(self.block_device.clone());
                 drop(block);
+                written += write_size;
             }
 
-
-            written += len as usize;
             fblock_start = 0;
             fblock_count = 0;
         }
@@ -359,8 +369,12 @@ impl Ext4 {
 
         // Update file size if necessary
         if offset + write_buf_len > file_size as usize {
-            log::trace!("set file size {:x}", offset+ write_buf_len);
-            inode_ref.inode.set_size((offset + write_buf_len) as u64);
+            log::trace!("set file size {:x}", offset + write_buf_len);
+            inode_ref
+                .inode
+                .set_size((offset + write_buf_len) as u64);
+
+            self.write_back_inode(&mut inode_ref);
         }
 
         Ok(written)
@@ -391,7 +405,7 @@ impl Ext4 {
         let p = &path[nameoff as usize..];
         let len = path_check(p, &mut is_goal);
 
-        // load parent 
+        // load parent
         let mut parent_inode_ref = self.get_inode_ref(parent_inode_num);
 
         let r = self.unlink(
@@ -405,16 +419,16 @@ impl Ext4 {
     }
 
     /// File truncate
-    /// 
+    ///
     /// Params:
     /// inode_ref: &mut Ext4InodeRef - inode reference
     /// new_size: u64 - new size of the file
-    /// 
+    ///
     /// Returns:
     /// Result<usize> - status of the operation
     pub fn truncate_inode(&self, inode_ref: &mut Ext4InodeRef, new_size: u64) -> Result<usize> {
         let old_size = inode_ref.inode.size();
-        
+
         assert!(old_size > new_size);
 
         if old_size == new_size {
