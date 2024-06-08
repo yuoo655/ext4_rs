@@ -167,21 +167,21 @@ impl Ext4 {
         Ok(new_block)
     }
 
-    /// Append a new block to the inode and update the extent tree.
+    /// Append a new block to the inode and update the extent tree.From a specific bgid
     ///
     /// Params:
     /// inode_ref: &mut Ext4InodeRef - inode reference
-    /// iblock: Ext4Lblk - logical block id
+    /// bgid: Start bgid of free block search
     ///
     /// Returns:
     /// `Result<Ext4Fsblk>` - physical block id of the new block
-    pub fn append_inode_pblk_with_goal(&self, inode_ref: &mut Ext4InodeRef, goal:Ext4Fsblk) -> Result<Ext4Fsblk> {
+    pub fn append_inode_pblk_from(&self, inode_ref: &mut Ext4InodeRef, start_bgid: &mut u32) -> Result<Ext4Fsblk> {
         let inode_size = inode_ref.inode.size();
         let iblock = ((inode_size as usize + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32;
 
         let mut newex: Ext4Extent = Ext4Extent::default();
 
-        let new_block = self.balloc_alloc_block(inode_ref, Some(goal))?;
+        let new_block = self.balloc_alloc_block_from(inode_ref, start_bgid)?;
 
         newex.first_block = iblock;
         newex.store_pblock(new_block);

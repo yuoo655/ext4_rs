@@ -179,6 +179,116 @@ impl Ext4 {
         return_errno_with_message!(Errno::ENOSPC, "No free blocks available in all block groups");
     }
 
+    /// Allocate a new block start from a specific bgid
+    ///
+    /// Params:
+    /// `inode_ref` - Reference to the inode.
+    /// `start_bgid` - Start bgid of free block search
+    ///
+    /// Returns:
+    /// `Result<Ext4Fsblk>` - The physical block number allocated.
+    pub fn balloc_alloc_block_from(
+        &self,
+        inode_ref: &mut Ext4InodeRef,
+        start_bgid: &mut u32,
+    ) -> Result<Ext4Fsblk> {
+        let mut alloc: Ext4Fsblk = 0;
+        let super_block = &self.super_block;
+        let blocks_per_group = super_block.blocks_per_group();
+
+        let mut bgid = *start_bgid;
+        let mut idx_in_bg = 0;
+
+
+        let block_group_count = super_block.block_group_count();
+        let mut count = block_group_count;
+
+        while count > 0 {
+            // Load block group reference
+            let mut block_group =
+                Ext4BlockGroup::load_new(self.block_device.clone(), &super_block, bgid as usize);
+
+            let free_blocks = block_group.get_free_blocks_count();
+            if free_blocks == 0 {
+                // Try next block group
+                bgid = (bgid + 1) % block_group_count;
+                count -= 1;
+
+                if count == 0 {
+                    log::trace!("No free blocks available in all block groups");
+                    return_errno_with_message!(Errno::ENOSPC, "No free blocks available in all block groups");
+                }
+                continue;
+            }
+
+            // Compute indexes
+            let first_in_bg = self.get_block_of_bgid(bgid);
+            let first_in_bg_index = self.addr_to_idx_bg(first_in_bg);
+
+            if idx_in_bg < first_in_bg_index {
+                idx_in_bg = first_in_bg_index;
+            }
+
+            // Load block with bitmap
+            let bmp_blk_adr = block_group.get_block_bitmap_block(&super_block);
+            let mut bitmap_block =
+                Block::load(self.block_device.clone(), bmp_blk_adr as usize * BLOCK_SIZE);
+
+            // Check if goal is free
+            if ext4_bmap_is_bit_clr(&bitmap_block.data, idx_in_bg) {
+                ext4_bmap_bit_set(&mut bitmap_block.data, idx_in_bg);
+                block_group.set_block_group_balloc_bitmap_csum(&super_block, &bitmap_block.data);
+                self.block_device
+                    .write_offset(bmp_blk_adr as usize * BLOCK_SIZE, &bitmap_block.data);
+                alloc = self.bg_idx_to_addr(idx_in_bg, bgid);
+
+                /* Update free block counts */
+                self.update_free_block_counts(inode_ref, &mut block_group, bgid as usize)?;
+
+                *start_bgid = bgid;
+                return Ok(alloc);
+            }
+
+            // Try to find free block near to goal
+            let blk_in_bg = blocks_per_group as u32;
+            let end_idx = min((idx_in_bg + 63) & !63, blk_in_bg);
+
+            for tmp_idx in (idx_in_bg + 1)..end_idx {
+                if ext4_bmap_is_bit_clr(&bitmap_block.data, tmp_idx) {
+                    ext4_bmap_bit_set(&mut bitmap_block.data, tmp_idx);
+                    block_group.set_block_group_balloc_bitmap_csum(&super_block, &bitmap_block.data);
+                    self.block_device
+                        .write_offset(bmp_blk_adr as usize * BLOCK_SIZE, &bitmap_block.data);
+                    alloc = self.bg_idx_to_addr(tmp_idx, bgid);
+                    self.update_free_block_counts(inode_ref, &mut block_group, bgid as usize)?;
+
+                    *start_bgid = bgid;
+                    return Ok(alloc);
+                }
+            }
+
+            // Find free bit in bitmap
+            let mut rel_blk_idx = 0;
+            if ext4_bmap_bit_find_clr(&bitmap_block.data, idx_in_bg, blk_in_bg, &mut rel_blk_idx) {
+                ext4_bmap_bit_set(&mut bitmap_block.data, rel_blk_idx);
+                block_group.set_block_group_balloc_bitmap_csum(&super_block, &bitmap_block.data);
+                self.block_device
+                    .write_offset(bmp_blk_adr as usize * BLOCK_SIZE, &bitmap_block.data);
+                alloc = self.bg_idx_to_addr(rel_blk_idx, bgid);
+                self.update_free_block_counts(inode_ref, &mut block_group, bgid as usize)?;
+
+                *start_bgid = bgid;
+                return Ok(alloc);
+            }
+
+            // No free block found in this group, try other block groups
+            bgid = (bgid + 1) % block_group_count;
+            count -= 1;
+        }
+
+        return_errno_with_message!(Errno::ENOSPC, "No free blocks available in all block groups");
+    }
+
     fn update_free_block_counts(
         &self,
         inode_ref: &mut Ext4InodeRef,

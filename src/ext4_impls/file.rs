@@ -277,6 +277,9 @@ impl Ext4 {
         // Buffer to keep track of written bytes
         let mut written = 0;
 
+        // Start bgid
+        let mut start_bgid = 1;
+
         // Unaligned write
         if unaligned > 0 {
             let len = min(write_buf_len, BLOCK_SIZE - unaligned);
@@ -285,7 +288,7 @@ impl Ext4 {
                 self.get_pblock_idx(&inode_ref, iblk_idx as u32)?
             } else {
                 // physical block not exist, append a new block
-                self.append_inode_pblk(&mut inode_ref)?
+                self.append_inode_pblk_from(&mut inode_ref, &mut start_bgid)?
             };
 
             let mut block =
@@ -311,7 +314,7 @@ impl Ext4 {
                     self.get_pblock_idx(&inode_ref, iblk_idx as u32)?
                 } else {
                     // physical block not exist, append a new block
-                    self.append_inode_pblk(&mut inode_ref)?
+                    self.append_inode_pblk_from(&mut inode_ref, &mut start_bgid)?
                 };
                 if fblock_start == 0 {
                     fblock_start = pblock_idx;
