@@ -254,7 +254,7 @@ impl ExtentNode {
                 for i in 0..header.entries_count {
                     let idx = (3 + i * 3) as usize;
                     let ext = Ext4Extent::load_from_u32(&root_data[idx..]);
-                    if lblock >= ext.first_block && lblock <= ext.get_actual_len() as u32 {
+                    if lblock >= ext.first_block && lblock <= ext.first_block + ext.get_actual_len() as u32 {
                         return Some((ext, i as usize));
                     }
                 }
