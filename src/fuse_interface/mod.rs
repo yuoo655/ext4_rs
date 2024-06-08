@@ -339,11 +339,11 @@ impl Ext4 {
         size: u32,
         flags: i32,
         lock_owner: Option<u64>,
-    ) -> Result<Vec<u8>> {
+        ) -> Result<Vec<u8>> {
         let mut data = vec![0u8; size as usize];
         let read_size = self.read_at(ino as u32, offset as usize, &mut data)?;
-
-        Ok(data)
+        let r = data[..read_size].to_vec();
+        Ok(r)
     }
 
     /// Write data.
