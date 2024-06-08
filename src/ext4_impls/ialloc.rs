@@ -6,7 +6,7 @@ use crate::utils::bitmap::*;
 impl Ext4 {
     pub fn ialloc_alloc_inode(&self, is_dir: bool) -> Result<u32> {
         let mut bgid = 0;
-        let bg_count = self.super_block.block_groups_count();
+        let bg_count = self.super_block.block_group_count();
         let mut super_block = self.super_block;
 
         while bgid <= bg_count {

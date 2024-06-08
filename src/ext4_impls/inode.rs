@@ -149,7 +149,39 @@ impl Ext4 {
         let iblock = ((inode_size as usize + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32;
 
         let mut newex: Ext4Extent = Ext4Extent::default();
-        let new_block = self.allocate_new_block(inode_ref)?;
+
+        let new_block = self.balloc_alloc_block(inode_ref, None)?;
+
+        newex.first_block = iblock;
+        newex.store_pblock(new_block);
+        newex.block_count = min(1, EXT_MAX_BLOCKS - iblock) as u16;
+
+        self.insert_extent(inode_ref, &mut newex)?;
+
+        // Update the inode size
+        let mut inode_size = inode_ref.inode.size();
+        inode_size += BLOCK_SIZE as u64;
+        inode_ref.inode.set_size(inode_size);
+        self.write_back_inode(inode_ref);
+
+        Ok(new_block)
+    }
+
+    /// Append a new block to the inode and update the extent tree.
+    ///
+    /// Params:
+    /// inode_ref: &mut Ext4InodeRef - inode reference
+    /// iblock: Ext4Lblk - logical block id
+    ///
+    /// Returns:
+    /// Result<Ext4Fsblk> - physical block id of the new block
+    pub fn append_inode_pblk_with_goal(&self, inode_ref: &mut Ext4InodeRef, goal:Ext4Fsblk) -> Result<Ext4Fsblk> {
+        let inode_size = inode_ref.inode.size();
+        let iblock = ((inode_size as usize + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32;
+
+        let mut newex: Ext4Extent = Ext4Extent::default();
+
+        let new_block = self.balloc_alloc_block(inode_ref, Some(goal))?;
 
         newex.first_block = iblock;
         newex.store_pblock(new_block);

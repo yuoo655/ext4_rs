@@ -145,8 +145,13 @@ impl Ext4Superblock {
         self.inodes_per_group
     }
 
+    /// Returns the first data block.
+    pub fn first_data_block(&self) -> u32{
+        self.first_data_block
+    }
+
     /// Returns the number of block groups.
-    pub fn block_groups_count(&self) -> u32 {
+    pub fn block_group_count(&self) -> u32 {
         let blocks_count = (self.blocks_count_hi as u64) << 32 | self.blocks_count_lo as u64;
 
         let blocks_per_group = self.blocks_per_group as u64;
@@ -179,7 +184,7 @@ impl Ext4Superblock {
     }
 
     pub fn get_inodes_in_group_cnt(&self, bgid: u32) -> u32 {
-        let block_group_count = self.block_groups_count();
+        let block_group_count = self.block_group_count();
         let inodes_per_group = self.inodes_per_group;
 
         let total_inodes = self.inodes_count;
