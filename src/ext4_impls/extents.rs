@@ -247,7 +247,9 @@ impl Ext4 {
                 return Ok(());
             }
             // Not empty, insert at search result pos + 1
+            log::trace!("insert newex at pos {:x?} current entry_count {:x?} ex {:x?}", node.position + 1 , header.entries_count, new_extent);
             *inode_ref.inode.root_extent_mut_at(node.position + 1) = *new_extent;
+            (*inode_ref.inode.root_extent_header_mut()).entries_count += 1;
             return Ok(());
         }
 
