@@ -113,6 +113,38 @@ impl Ext4 {
         Ok(inode_ref)
     }
 
+
+    /// create a new inode and link it to the parent directory
+    ///
+    /// Params:
+    /// parent: u32 - inode number of the parent directory
+    /// name: &str - name of the new file
+    /// mode: u16 - file mode
+    /// uid: u32 - user id
+    /// gid: u32 - group id
+    ///
+    /// Returns:
+    pub fn create_with_attr(&self, parent: u32, name: &str, inode_mode: u16, uid:u16, gid: u16) -> Result<Ext4InodeRef> {
+        let mut parent_inode_ref = self.get_inode_ref(parent);
+
+        // let mut child_inode_ref = self.create_inode(inode_mode)?;
+        let mut init_child_ref = self.create_inode(inode_mode)?;
+
+        init_child_ref.inode.set_uid(uid);
+        init_child_ref.inode.set_gid(gid);
+
+        self.write_back_inode_without_csum(&init_child_ref);
+        // load new
+        let mut child_inode_ref = self.get_inode_ref(init_child_ref.inode_num);
+
+        self.link(&mut parent_inode_ref, &mut child_inode_ref, name)?;
+
+        self.write_back_inode(&mut parent_inode_ref);
+        self.write_back_inode(&mut child_inode_ref);
+
+        Ok(child_inode_ref)
+    }
+
     /// Read data from a file at a given offset
     ///
     /// Parms:
