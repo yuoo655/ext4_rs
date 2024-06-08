@@ -105,7 +105,7 @@ fn main() {
     let disk = Arc::new(Disk {});
     let ext4 = Ext4::open(disk);
 
-    // dir
+    // dir make
     log::info!("----mkdir----");
     for i in 0..10 {
         let path = format!("dirtest{}", i);
@@ -114,25 +114,33 @@ fn main() {
         let r = ext4.dir_mk(&path);
         assert!(r.is_ok(), "dir make error {:?}", r.err());
     }
-
-
     let path = "dir1/dir2/dir3/dir4/dir5/dir6";
     log::info!("mkdir making {:?}", path);
     let r = ext4.dir_mk(&path);
     assert!(r.is_ok(), "dir make error {:?}", r.err());
 
+    // dir ls
+    let entries = ext4.dir_get_entries(ROOT_INODE);
+    log::info!("dir ls root");
+    for entry in entries {
+        log::info!("{:?}", entry.get_name());
+    }
+
+    // file remove
     let path = "test_files/file_to_remove";
     let r = ext4.file_remove(&path);
 
+    // dir remove
     let path = "dir_to_remove";
     let r = ext4.dir_remove(ROOT_INODE, &path);
 
-
+    // file create/write
+    log::info!("----create file----");
     let inode_mode = InodeFileType::S_IFREG.bits();
-    let inode_ref = ext4.create(ROOT_INODE, "511M.txt",inode_mode ).unwrap();
-    // 511M  for 512M we need split the extent tree
+    let inode_ref = ext4.create(ROOT_INODE, "511M.txt", inode_mode).unwrap();
+    log::info!("----write file----");
+    // test 511M  for 512M we need split the extent tree
     const WRITE_SIZE: usize = (0x100000 * 511);
     let write_buf = vec![0x41 as u8; WRITE_SIZE];
     let r = ext4.write_at(inode_ref.inode_num, 0, &write_buf);
-
 }
