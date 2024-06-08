@@ -12,8 +12,7 @@ impl Ext4 {
     /// name: &str - name of the child inode
     ///
     /// Returns:
-    /// Result<usize> - status of the operation
-    ///
+    /// `Result<usize>` - status of the operation
     pub fn link(
         &self,
         parent: &mut Ext4InodeRef,
@@ -158,7 +157,7 @@ impl Ext4 {
     /// read_buf: &mut [u8] - buffer to read the data into
     ///
     /// Returns:
-    /// Result<usize> - number of bytes read
+    /// `Result<usize>` - number of bytes read
     pub fn read_at(&self, inode: u32, offset: usize, read_buf: &mut [u8]) -> Result<usize> {
         // read buf is empty, return 0
         let mut read_buf_len = read_buf.len();
@@ -250,7 +249,7 @@ impl Ext4 {
     /// write_buf: &[u8] - buffer to write the data from
     ///
     /// Returns:
-    /// Result<usize> - number of bytes written
+    /// `Result<usize>` - number of bytes written
     pub fn write_at(&self, inode: u32, offset: usize, write_buf: &[u8]) -> Result<usize> {
         // write buf is empty, return 0
         let write_buf_len = write_buf.len();
@@ -386,7 +385,7 @@ impl Ext4 {
     /// path: file path start from root
     ///
     /// Returns:
-    /// Result<usize> - status of the operation
+    /// `Result<usize>` - status of the operation
     pub fn file_remove(&self, path: &str) -> Result<usize> {
         // start from root
         let mut parent_inode_num = ROOT_INODE;
@@ -425,7 +424,7 @@ impl Ext4 {
     /// new_size: u64 - new size of the file
     ///
     /// Returns:
-    /// Result<usize> - status of the operation
+    /// `Result<usize>` - status of the operation
     pub fn truncate_inode(&self, inode_ref: &mut Ext4InodeRef, new_size: u64) -> Result<usize> {
         let old_size = inode_ref.inode.size();
 

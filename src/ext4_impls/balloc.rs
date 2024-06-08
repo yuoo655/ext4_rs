@@ -6,7 +6,7 @@ use crate::utils::bitmap::*;
 impl Ext4 {
     /// Compute number of block group from block address.
     ///
-    /// Parms:
+    /// Params:
     ///
     /// `baddr` - Absolute address of block.
     ///
@@ -22,7 +22,7 @@ impl Ext4 {
 
     /// Compute the starting block address of a block group.
     ///
-    /// Parms:
+    /// Params:
     /// `bgid` - Block group index
     ///
     /// Returns:
@@ -37,7 +37,7 @@ impl Ext4 {
 
     /// Convert block address to relative index in block group.
     ///
-    /// Parms:
+    /// Params:
     /// `baddr` - Block number to convert.
     ///
     /// Returns:

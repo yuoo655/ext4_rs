@@ -68,12 +68,12 @@ impl Ext4 {
 
     /// Get physical block id of a logical block.
     ///
-    /// Parms:
+    /// Params:
     /// inode_ref: &Ext4InodeRef - inode reference
     /// lblock: Ext4Lblk - logical block id
     ///
     /// Returns:
-    /// Result<Ext4Fsblk> - physical block id
+    /// `Result<Ext4Fsblk>` - physical block id
     pub fn get_pblock_idx(&self, inode_ref: &Ext4InodeRef, lblock: Ext4Lblk) -> Result<Ext4Fsblk> {
         let search_path = self.find_extent(&inode_ref, lblock);
         if let Ok(path) = search_path {
@@ -143,7 +143,7 @@ impl Ext4 {
     /// iblock: Ext4Lblk - logical block id
     ///
     /// Returns:
-    /// Result<Ext4Fsblk> - physical block id of the new block
+    /// `Result<Ext4Fsblk>` - physical block id of the new block
     pub fn append_inode_pblk(&self, inode_ref: &mut Ext4InodeRef) -> Result<Ext4Fsblk> {
         let inode_size = inode_ref.inode.size();
         let iblock = ((inode_size as usize + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32;
@@ -174,7 +174,7 @@ impl Ext4 {
     /// iblock: Ext4Lblk - logical block id
     ///
     /// Returns:
-    /// Result<Ext4Fsblk> - physical block id of the new block
+    /// `Result<Ext4Fsblk>` - physical block id of the new block
     pub fn append_inode_pblk_with_goal(&self, inode_ref: &mut Ext4InodeRef, goal:Ext4Fsblk) -> Result<Ext4Fsblk> {
         let inode_size = inode_ref.inode.size();
         let iblock = ((inode_size as usize + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32;
@@ -204,7 +204,7 @@ impl Ext4 {
     /// inode_mode: u16 - inode mode
     ///
     /// Returns:
-    /// Result<u32> - inode number
+    /// `Result<u32>` - inode number
     pub fn alloc_inode(&self, is_dir: bool) -> Result<u32> {
         // Allocate inode
         let inode_num = self.ialloc_alloc_inode(is_dir)?;

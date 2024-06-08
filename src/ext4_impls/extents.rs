@@ -6,12 +6,12 @@ use crate::ext4_defs::*;
 impl Ext4 {
     /// Find an extent in the extent tree.
     ///
-    /// Parms:
+    /// Params:
     /// inode_ref: &Ext4InodeRef - inode reference
     /// lblock: Ext4Lblk - logical block id
     ///
     /// Returns:
-    /// Result<SearchPath> - search path
+    /// `Result<SearchPath>` - search path
     ///
     /// 如果 depth > 0，则查找extent_index，查找目标 lblock 对应的 extent。
     /// 如果 depth = 0，则直接在root节点中查找 extent，查找目标 lblock 对应的 extent。

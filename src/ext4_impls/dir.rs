@@ -6,13 +6,13 @@ use crate::ext4_defs::*;
 impl Ext4 {
     /// Find a directory entry in a directory
     ///
-    /// Parms:
+    /// Params:
     /// parent_inode: u32 - inode number of the parent directory
     /// name: &str - name of the entry to find
     /// result: &mut Ext4DirSearchResult - result of the search
     ///
     /// Returns:
-    /// Result<usize> - status of the search
+    /// `Result<usize>` - status of the search
     pub fn dir_find_entry(
         &self,
         parent_inode: u32,
@@ -66,7 +66,7 @@ impl Ext4 {
 
     /// Find a directory entry in a block
     ///
-    /// Parms:
+    /// Params:
     /// block: &mut Block - block to search in
     /// name: &str - name of the entry to find
     ///
@@ -100,11 +100,11 @@ impl Ext4 {
 
     /// Get dir entries of a inode
     ///
-    /// Parms:
+    /// Params:
     /// inode: u32 - inode number of the directory
     ///
     /// Returns:
-    /// Vec<Ext4DirEntry> - list of directory entries
+    /// `Vec<Ext4DirEntry>` - list of directory entries
     pub fn dir_get_entries(&self, inode: u32) -> Vec<Ext4DirEntry> {
         let mut entries = Vec::new();
 
@@ -165,13 +165,13 @@ impl Ext4 {
 
     /// Add a new entry to a directory
     ///
-    /// Parms:
+    /// Params:
     /// parent: &mut Ext4InodeRef - parent directory inode reference
     /// child: &mut Ext4InodeRef - child inode reference
     /// path: &str - path of the new entry
     ///
     /// Returns:
-    /// Result<usize> - status of the operation
+    /// `Result<usize>` - status of the operation
     pub fn dir_add_entry(
         &self,
         parent: &mut Ext4InodeRef,
@@ -228,13 +228,13 @@ impl Ext4 {
 
     /// Try to insert a new entry to an existing block
     ///
-    /// Parms:
+    /// Params:
     /// block: &mut Block - block to insert the new entry
     /// name: &str - name of the new entry
     /// inode: u32 - inode number of the new entry
     ///
     /// Returns:
-    /// Result<usize> - status of the operation
+    /// `Result<usize>` - status of the operation
     pub fn try_insert_to_existing_block(
         &self,
         block: &mut Block,
@@ -301,7 +301,7 @@ impl Ext4 {
 
     /// Insert a new entry to a new block
     ///
-    /// Parms:
+    /// Params:
     /// block: &mut Block - block to insert the new entry
     /// name: &str - name of the new entry
     /// inode: u32 - inode number of the new entry
