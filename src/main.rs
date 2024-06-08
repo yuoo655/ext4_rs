@@ -129,9 +129,9 @@ fn main() {
 
 
     let inode_mode = InodeFileType::S_IFREG.bits();
-    let inode_ref = ext4.create(ROOT_INODE, "64M.txt",inode_mode ).unwrap();
-    // 64M
-    const WRITE_SIZE: usize = (0x100000 * 64);
+    let inode_ref = ext4.create(ROOT_INODE, "511M.txt",inode_mode ).unwrap();
+    // 511M  for 512M we need split the extent tree
+    const WRITE_SIZE: usize = (0x100000 * 511);
     let write_buf = vec![0x41 as u8; WRITE_SIZE];
     let r = ext4.write_at(inode_ref.inode_num, 0, &write_buf);
 

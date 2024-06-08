@@ -252,7 +252,6 @@ impl Ext4 {
             block.sync_blk_to_disk(self.block_device.clone());
             drop(block);
 
-            trace!("Unaligned write at block: {}, size: {}", pblock_idx, len);
 
             written += len;
             iblk_idx += 1;
@@ -270,6 +269,7 @@ impl Ext4 {
                 } else {
                     // physical block not exist, append a new block
                     self.append_inode_pblk(&mut inode_ref)?
+                    // self.append_inode_pblk_with_goal(&mut inode_ref, fblock_start)?
                 };
                 if fblock_start == 0 {
                     fblock_start = pblock_idx;
@@ -294,7 +294,6 @@ impl Ext4 {
                 drop(block);
             }
 
-            trace!("Aligned write at block: {}, size: {}", fblock_start, len);
 
             written += len as usize;
             fblock_start = 0;
@@ -323,6 +322,7 @@ impl Ext4 {
 
         // Update file size if necessary
         if offset + write_buf_len > file_size as usize {
+            log::trace!("set file size {:x}", offset+ write_buf_len);
             inode_ref.inode.set_size((offset + write_buf_len) as u64);
         }
 
