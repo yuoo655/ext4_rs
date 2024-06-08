@@ -81,7 +81,12 @@ impl Ext4 {
     }
 
     pub fn create_inode(&self, inode_mode: u16) -> Result<Ext4InodeRef> {
-        let inode_file_type = InodeFileType::from_bits(inode_mode).unwrap();
+
+        let inode_file_type = match InodeFileType::from_bits(inode_mode) {
+            Some(file_type) => file_type,
+            None => InodeFileType::S_IFREG,
+        };
+
         let is_dir = inode_file_type == InodeFileType::S_IFDIR;
 
         // allocate inode
