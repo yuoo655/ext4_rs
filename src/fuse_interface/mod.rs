@@ -158,7 +158,7 @@ impl Ext4 {
     }
 
     /// Create a directory.
-    fn fuse_mkdir(&mut self, parent: u64, name: &str, mode: u32, umask: u32) -> Result<usize> {
+    pub fn fuse_mkdir(&mut self, parent: u64, name: &str, mode: u32, umask: u32) -> Result<usize> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
         let r = self.dir_find_entry(parent as u32, name, &mut search_result);
         if r.is_ok() {
@@ -172,6 +172,27 @@ impl Ext4 {
         let inode_ref = self.create(parent as u32, name, mode as u16)?;
         Ok(EOK)
     }
+
+    /// Create a directory.
+    pub fn fuse_mkdir_with_attr(&mut self, parent: u64, name: &str, mode: u32, umask: u32, uid:u32, gid:u32) -> Result<Ext4InodeRef> {
+
+        let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
+        let r = self.dir_find_entry(parent as u32, name, &mut search_result);
+        if r.is_ok() {
+            return_errno!(Errno::EEXIST);
+        }
+
+        // mkdir via fuse passes a mode of 0. so we need to set default mode
+        let file_type = match InodeFileType::from_bits(mode as u16) {
+            Some(file_type) => file_type,
+            None => InodeFileType::S_IFDIR,
+        };
+        let mode = file_type.bits();
+        let inode_ref = self.create_with_attr(parent as u32, name, mode as u16, uid as u16, gid as u16)?;
+
+        Ok(inode_ref)
+    }
+
     /// Remove a file.
     pub fn fuse_unlink(&self, parent: u64, name: &str) -> Result<usize> {
         // unlink actual remove a file
