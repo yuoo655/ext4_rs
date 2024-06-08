@@ -225,7 +225,7 @@ impl Ext4 {
         Ok(EOK)
     }
     /// Remove a directory.
-    fn fuse_rmdir(&mut self, parent: u64, name: &str) -> Result<usize> {
+    pub fn fuse_rmdir(&mut self, parent: u64, name: &str) -> Result<usize> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
 
         let r = self.dir_find_entry(parent as u32, name, &mut search_result)?;
@@ -247,7 +247,7 @@ impl Ext4 {
         return Ok(EOK);
     }
     /// Create a symbolic link.
-    fn fuse_symlink(&mut self, parent: u64, link_name: &str, target: &str) -> Result<usize> {
+    pub fn fuse_symlink(&mut self, parent: u64, link_name: &str, target: &str) -> Result<usize> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
         let r = self.dir_find_entry(parent as u32, link_name, &mut search_result);
         if r.is_ok() {
@@ -268,7 +268,7 @@ impl Ext4 {
     /// newname: the name of the new file
     ///
     ///
-    fn fuse_link(&mut self, ino: u64, newparent: u64, newname: &str) -> Result<usize> {
+    pub fn fuse_link(&mut self, ino: u64, newparent: u64, newname: &str) -> Result<usize> {
         let mut parent_inode_ref = self.get_inode_ref(newparent as u32);
         let mut child_inode_ref = self.get_inode_ref(ino as u32);
 
@@ -286,7 +286,7 @@ impl Ext4 {
     /// anything in fh. There are also some flags (direct_io, keep_cache) which the
     /// filesystem may set, to change the way the file is opened. See fuse_file_info
     /// structure in <fuse_common.h> for more details.
-    fn fuse_open(&mut self, ino: u64, flags: i32) -> Result<usize> {
+    pub fn fuse_open(&mut self, ino: u64, flags: i32) -> Result<usize> {
         let inode_ref = self.get_inode_ref(ino as u32);
 
         // check permission
@@ -379,7 +379,7 @@ impl Ext4 {
     /// anything in fh, though that makes it impossible to implement standard conforming
     /// directory stream operations in case the contents of the directory can change
     /// between opendir and releasedir.
-    fn fuse_opendir(&mut self, ino: u64, flags: i32) -> Result<usize> {
+    pub fn fuse_opendir(&mut self, ino: u64, flags: i32) -> Result<usize> {
         let inode_ref = self.get_inode_ref(ino as u32);
 
         // 检查是否为目录
@@ -418,7 +418,7 @@ impl Ext4 {
     /// structure in <fuse_common.h> for more details. If this method is not
     /// implemented or under Linux kernel versions earlier than 2.6.15, the mknod()
     /// and open() methods will be called instead.
-    fn fuse_create(
+    pub fn fuse_create(
         &mut self,
         parent: u64,
         name: &str,
@@ -477,7 +477,7 @@ impl Ext4 {
     /// int faccessat(int dirfd, const char *pathname, int mode, int flags);
     /// 
     /// uid and gid come from request
-    fn fuse_access(&mut self, ino: u64, uid: u16, gid: u16, mode: u16, mask: i32) -> bool {
+    pub fn fuse_access(&mut self, ino: u64, uid: u16, gid: u16, mode: u16, mask: i32) -> bool {
         let inode_ref = self.get_inode_ref(ino as u32);
 
         inode_ref.inode.check_access(uid, gid, mode, mask as u16)
@@ -487,7 +487,7 @@ impl Ext4 {
     /// Linux stat syscall defines:
     /// int stat(const char *restrict pathname, struct stat *restrict statbuf);
     /// int fstatat(int dirfd, const char *restrict pathname, struct stat *restrict statbuf, int flags);
-    fn fuse_statfs(&mut self, ino: u64) -> Result<LinuxStat> {
+    pub fn fuse_statfs(&mut self, ino: u64) -> Result<LinuxStat> {
         let inode_ref = self.get_inode_ref(ino as u32);
         let linux_stat = LinuxStat::from_inode_ref(&inode_ref);
         Ok(linux_stat)
@@ -496,13 +496,13 @@ impl Ext4 {
     /// Initialize filesystem.
     /// Called before any other filesystem method.
     /// The kernel module connection can be configured using the KernelConfig object
-    fn fuse_init(&mut self) -> Result<usize> {
+    pub fn fuse_init(&mut self) -> Result<usize> {
         Ok(EOK)
     }
 
     /// Clean up filesystem.
     /// Called on filesystem exit.
-    fn fuse_destroy(&mut self) -> Result<usize> {
+    pub fn fuse_destroy(&mut self) -> Result<usize> {
         Ok(EOK)
     }
 
