@@ -5,7 +5,7 @@
       "name": "yuoo655",
       "email": "lenuulan@gmail.com"
     }],
-    "keywords": ["ext4", "file system"],
+    "keywords": ["ext4", "file system","fuse"],
     "repo": "yuoo655/ext4_rs",
-    "doc_url": "https://github.com/yuoo655/ext4_rs/README.md"
+    "doc_url": "https://github.com/yuoo655/ext4_rs/blob/refactor/README.md"
   }
