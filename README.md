@@ -7,6 +7,10 @@ rust version nightly-2024-06-01
 
 rustc 1.80.0-nightly (ada5e2c7b 2024-05-31)
 
+mkfs.ext4 1.46.5 (30-Dec-2021) 
+
+For small images, the newer mkfs.ext4 uses a 512-byte block size. Use **mkfs.ext4 -b 4096** to set a 4096-byte block size.
+
 ## run example
 ```sh
 git clone https://github.com/yuoo655/ext4_rs.git
