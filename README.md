@@ -50,7 +50,7 @@ cargo run ./foo/
 
 
 
-# how to use (old interface in dev branch)
+# how to use 
 
 ## impl BlockDevice Trait
 
@@ -99,88 +99,69 @@ let ext4 = Ext4::open(disk);
 
 ### read regular file
 ```rust
-let path = "/test_files/1.txt";
-let mut ext4_file = Ext4File::new();
-let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
-assert!(r.is_ok(), "open file error {:?}", r.err());
-
-let mut read_buf = vec![0u8; 0x20000000];
-let mut read_cnt = 0;
-let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, 0x20000000, &mut read_cnt);
-assert!(r.is_ok(), "open file error {:?}", r.err());
+let path = "test_files/0.txt";
+let mut read_buf = vec![0u8;  READ_SIZE as usize];
+let child_inode = ext4.generic_open(path, &mut 2, false, 0, &mut 0).unwrap();
+// 1G
+let mut data = vec![0u8; 0x100000 * 1024 as usize];
+let read_data = ext4.read_at(child_inode, 0 as usize, &mut data);
+log::info!("read data  {:?}", &data[..10]);
 ```
 
 ### read link
 ```rust
-log::info!("----read link file----");
-let path = "/test_files/linktest";
-let mut ext4_file = Ext4File::new();
-let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
-assert!(r.is_ok(), "open link error {:?}", r.err());
-
-let mut read_buf = vec![0u8; 0x1000];
-let mut read_cnt = 0;
-let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, 0x1000, &mut read_cnt);
-assert!(r.is_ok(), "read link error {:?}", r.err());
-log::info!("read data sample {:x?}", &read_buf[0..10]);
+let path = "test_files/linktest";
+let mut read_buf = vec![0u8;  READ_SIZE as usize];
+// 2 is root inode
+let child_inode = ext4.generic_open(path, &mut 2, false, 0, &mut 0).unwrap();
+let mut data = vec![0u8; 0x100000 * 1024 as usize];
+let read_data = ext4.read_at(child_inode, 0 as usize, &mut data);
+log::info!("read data  {:?}", &data[..10]);
 ```
 
 ### mkdir
-```rust
+```rust    
 for i in 0..10 {
     let path = format!("dirtest{}", i);
     let path = path.as_str();
-    let r = ext4.ext4_dir_mk(&path);
+    let r = ext4.dir_mk(&path);
     assert!(r.is_ok(), "dir make error {:?}", r.err());
 }
+let path = "dir1/dir2/dir3/dir4/dir5/dir6";
+let r = ext4.dir_mk(&path);
+assert!(r.is_ok(), "dir make error {:?}", r.err());
 ```
 
 ### file write test
 ```rust
-const WRITE_SIZE: usize = 0x400000;
-let path = format!("dirtest{}/write_{}.txt", i, i);
-let path = path.as_str();
-let mut ext4_file = Ext4File::new();
-let r = ext4.ext4_open(&mut ext4_file, path, "w+", true);
-assert!(r.is_ok(), "open file error {:?}", r.err());
+// file create/write
+let inode_mode = InodeFileType::S_IFREG.bits();
+let inode_ref = ext4.create(ROOT_INODE, "511M.txt", inode_mode).unwrap();
 
-let write_data = vec![0x41 + i as u8; WRITE_SIZE];
-ext4.ext4_file_write(&mut ext4_file, &write_data, WRITE_SIZE);
-
-// test
-let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
-assert!(r.is_ok(), "open file error {:?}", r.err());
-
-let mut read_buf = vec![0u8; WRITE_SIZE];
-let mut read_cnt = 0;
-let r = ext4.ext4_file_read(&mut ext4_file, &mut read_buf, WRITE_SIZE, &mut read_cnt);
-assert!(r.is_ok(), "open file error {:?}", r.err());
-assert_eq!(write_data, read_buf);
+// test 511M  for 512M we need split the extent tree
+const WRITE_SIZE: usize = (0x100000 * 511);
+let write_buf = vec![0x41 as u8; WRITE_SIZE];
+let r = ext4.write_at(inode_ref.inode_num, 0, &write_buf);
 ```
 
 
 ### ls
 ```rust
-let path = "test_files";
-let mut ext4_file = Ext4File::new();
-let r = ext4.ext4_open(&mut ext4_file, path, "r+", false);
-assert!(r.is_ok(), "open link error {:?}", r.err());
-
-let de = ext4.read_dir_entry(ext4_file.inode as _);
-for i in de.iter() {
-    log::info!("{:?}", i.get_name());
+let entries = ext4.dir_get_entries(ROOT_INODE);
+log::info!("dir ls root");
+for entry in entries {
+    log::info!("{:?}", entry.get_name());
 }
 ```
 
 ### file remove
 ```rust
 let path = "test_files/file_to_remove";
-let r = ext4.ext4_file_remove(&path);
+let r = ext4.file_remove(&path);
 ```
 
 ### dir remove
 ```rust
 let path = "dir_to_remove";
-// remove dir from root inode 2
-let r = ext4.ext4_dir_remove(2, &path);
+let r = ext4.dir_remove(ROOT_INODE, &path);
 ```

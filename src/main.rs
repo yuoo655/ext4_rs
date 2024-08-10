@@ -105,6 +105,26 @@ fn main() {
     let disk = Arc::new(Disk {});
     let ext4 = Ext4::open(disk);
 
+    // file read
+    let path = "test_files/0.txt";
+    // 1G
+    const READ_SIZE: usize = (0x100000 * 1024);
+    let mut read_buf = vec![0u8;  READ_SIZE as usize];
+    let child_inode = ext4.generic_open(path, &mut 2, false, 0, &mut 0).unwrap();
+    let mut data = vec![0u8; READ_SIZE as usize];
+    let read_data = ext4.read_at(child_inode, 0 as usize, &mut data);
+    log::info!("read data  {:?}", &data[..10]);
+
+
+
+    let path = "test_files/linktest";
+    let mut read_buf = vec![0u8;  READ_SIZE as usize];
+    // 2 is root inode
+    let child_inode = ext4.generic_open(path, &mut 2, false, 0, &mut 0).unwrap();
+    let mut data = vec![0u8; READ_SIZE as usize];
+    let read_data = ext4.read_at(child_inode, 0 as usize, &mut data);
+    log::info!("read data  {:?}", &data[..10]);
+
     // dir make
     log::info!("----mkdir----");
     for i in 0..10 {
