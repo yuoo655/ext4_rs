@@ -258,15 +258,70 @@ impl Ext4 {
         return_errno_with_message!(Errno::ENOTSUP, "Not supported insert extent at nonroot");
     }
 
+    // finds empty index and adds new leaf. if no free index is found, then it requests in-depth growing.
     fn create_new_leaf(
         &self,
         inode_ref: &mut Ext4InodeRef,
         search_path: &mut SearchPath,
         new_extent: &mut Ext4Extent,
     ) -> Result<()> {
-        // Implement logic to create a new leaf
+        // log::info!("search path {:x?}", search_path);
+
+        
+        //  tree is full, time to grow in depth
+        // self.ext_grow_indepth(inode_ref);
+        
         unimplemented!()
     }
+
+    
+    // allocates new block
+    // moves top-level data (index block or leaf) into the new block
+    // initializes new top-level, creating index that points to the
+    // just created block
+    fn ext_grow_indepth(&self, inode_ref: &mut Ext4InodeRef) -> Result<()>{
+        // Try to prepend new index to old one
+        let new_block = self.balloc_alloc_block(inode_ref, None)?;
+
+        // load new block
+        let mut new_ext4block =
+            Block::load(self.block_device.clone(), new_block as usize * BLOCK_SIZE);
+
+        // move top-level index/leaf into new block
+        let data_to_copy = &inode_ref.inode.block;
+        let data_to_copy = data_to_copy.as_ptr() as *const u8;
+        unsafe{core::ptr::copy_nonoverlapping(data_to_copy, new_ext4block.data.as_mut_ptr(), 60)};
+        
+        // zero out unused area in the extent block
+        new_ext4block.data[60..].fill(0);
+
+        // set new block header
+        let mut new_header = Ext4ExtentHeader::load_from_u8_mut(&mut new_ext4block.data);
+        new_header.set_magic();
+        let space = (BLOCK_SIZE - core::mem::size_of::<Ext4ExtentHeader>()) / core::mem::size_of::<Ext4Extent>();
+        new_header.set_max_entries_count(space as u16);
+        
+        // Update top-level index: num,max,pointer
+        let mut root_header = inode_ref.inode.root_extent_header_mut();
+        root_header.set_entries_count(1);
+        root_header.add_depth();
+
+        let root_depth = root_header.depth;
+        let root_first_extent_block = inode_ref.inode.root_extent_at(0).first_block;
+        let mut root_first_index = inode_ref.inode.root_first_index_mut();
+        root_first_index.store_pblock(new_block);
+        if root_depth == 0 {
+            // Root extent block becomes index block
+            root_first_index.first_block = root_first_extent_block;
+        }
+
+        log::info!("first index {:x?}", root_first_index);
+        log::info!("new_header {:x?}", new_header);
+        log::info!("root_header {:x?}", inode_ref.inode.root_extent_header());
+
+        Ok(())
+    }
+
 }
 
 impl Ext4 {

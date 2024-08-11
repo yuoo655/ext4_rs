@@ -371,6 +371,11 @@ impl Ext4Inode {
         unsafe { *(header_ptr.add(1) as *const Ext4Extent).add(pos) }
     }
 
+    pub fn root_first_index_mut(&mut self) -> &mut Ext4ExtentIndex {
+        let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
+        unsafe { &mut *(header_ptr.add(1) as *mut Ext4ExtentIndex) }
+    }
+
     pub fn extent_tree_init(&mut self) {
         let header_ptr = self.block.as_mut_ptr() as *mut Ext4ExtentHeader;
         unsafe {

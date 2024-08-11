@@ -398,6 +398,12 @@ impl Ext4ExtentIndex {
     pub fn get_pblock(&self) -> u64 {
         ((self.leaf_hi as u64) << 32) | (self.leaf_lo as u64)
     }
+
+    /// Stores the physical block number to which this extent points.
+    pub fn store_pblock(&mut self, pblock: u64) {
+        self.leaf_lo = pblock as u32 & 0xffffffff;
+        self.leaf_hi = (((pblock as u32) << 31) << 1) as u16;
+    }
 }
 
 impl Ext4Extent {
@@ -487,6 +493,10 @@ impl Ext4ExtentHeader {
 
     pub fn set_depth(&mut self, depth: u16) {
         self.depth = depth;
+    }
+
+    pub fn add_depth(&mut self) {
+        self.depth += 1;
     }
 
     pub fn set_entries_count(&mut self, entries_count: u16) {
