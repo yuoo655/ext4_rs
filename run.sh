@@ -1,7 +1,7 @@
 rm -rf test_files
 python3 gen_test_files.py
 rm -rf ex4.img
-dd if=/dev/zero of=ex4.img bs=1M count=4096
+dd if=/dev/zero of=ex4.img bs=1M count=8192
 mkfs.ext4 ./ex4.img
 
 ## create link
