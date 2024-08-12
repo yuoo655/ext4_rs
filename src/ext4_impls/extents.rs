@@ -43,10 +43,10 @@ impl Ext4 {
                 });
 
                 let next_block = search_path.path.last().unwrap().index.unwrap().leaf_lo;
-                let next_data = self
+                let mut next_data = self
                     .block_device
                     .read_offset(next_block as usize * BLOCK_SIZE);
-                node = ExtentNode::load_from_data(&next_data, false)?;
+                node = ExtentNode::load_from_data_mut(&mut next_data, false)?;
                 depth -= 1;
                 search_path.depth += 1;
                 pblock_of_node = next_block as usize;
@@ -223,6 +223,17 @@ impl Ext4 {
         let depth = search_path.depth as usize;
         left_ext.block_count += right_ext.block_count;
 
+        if left_ext.first_block >= 0x20000{
+            let node = &search_path.path[depth];
+            let block = node.pblock_of_node;
+            let new_ex_offset = core::mem::size_of::<Ext4ExtentHeader>() + core::mem::size_of::<Ext4Extent>() * (node.position);
+            let mut ext4block = Block::load(self.block_device.clone(), block * BLOCK_SIZE);
+            let left_ext:&mut Ext4Extent = ext4block.read_offset_as_mut(new_ex_offset);
+            left_ext.block_count += 1;
+            ext4block.sync_blk_to_disk(self.block_device.clone());
+        }
+
+
         Ok(())
     }
 
@@ -251,9 +262,29 @@ impl Ext4 {
             *inode_ref.inode.root_extent_mut_at(node.position + 1) = *new_extent;
             (*inode_ref.inode.root_extent_header_mut()).entries_count += 1;
             return Ok(());
-        }
+        }else{
+            // insert at nonroot
+            log::trace!("insert newex at pos {:x?} current entry_count {:x?} ex {:x?}", node.position + 1 , header.entries_count, new_extent);
 
-        // insert at pblock
+            // load block
+            let node_block = node.pblock_of_node;
+            let mut ext4block =
+            Block::load(self.block_device.clone(), node_block as usize * BLOCK_SIZE);
+            let new_ex_offset = core::mem::size_of::<Ext4ExtentHeader>() + core::mem::size_of::<Ext4Extent>() * (node.position + 1);
+
+            // insert new extent
+            let ex: &mut Ext4Extent = ext4block.read_offset_as_mut(new_ex_offset);
+            *ex = *new_extent;
+            let header: &mut Ext4ExtentHeader = ext4block.read_offset_as_mut(0);
+
+            // update entry count 
+            header.entries_count += 1;
+
+            // sync to disk
+            ext4block.sync_blk_to_disk(self.block_device.clone());
+
+            return Ok(());
+        }
 
         return_errno_with_message!(Errno::ENOTSUP, "Not supported insert extent at nonroot");
     }
@@ -267,11 +298,12 @@ impl Ext4 {
     ) -> Result<()> {
         // log::info!("search path {:x?}", search_path);
 
-        
-        //  tree is full, time to grow in depth
-        // self.ext_grow_indepth(inode_ref);
-        
-        unimplemented!()
+        // tree is full, time to grow in depth
+        self.ext_grow_indepth(inode_ref);
+
+        // insert again
+        self.insert_extent(inode_ref, new_extent)
+
     }
 
     
@@ -315,13 +347,14 @@ impl Ext4 {
             root_first_index.first_block = root_first_extent_block;
         }
 
-        log::info!("first index {:x?}", root_first_index);
-        log::info!("new_header {:x?}", new_header);
-        log::info!("root_header {:x?}", inode_ref.inode.root_extent_header());
+
+        new_ext4block.sync_blk_to_disk(self.block_device.clone());
+        self.write_back_inode(inode_ref);
+
 
         Ok(())
     }
-
+    
 }
 
 impl Ext4 {
