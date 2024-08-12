@@ -98,8 +98,9 @@ impl Ext4ExtentHeader {
     }
 
     /// Load the extent header from u32 array mutably.
-    pub fn load_from_u32_mut(data: &mut [u32]) -> Self {
-        unsafe { core::ptr::read(data.as_mut_ptr() as *mut _) }
+    pub fn load_from_u32_mut(data: &mut [u32]) -> &mut Self {
+        let ptr = data.as_mut_ptr() as *mut Self;
+        unsafe { &mut *ptr }
     }
 
     /// Load the extent header from u8 array.
@@ -108,8 +109,9 @@ impl Ext4ExtentHeader {
     }
 
     /// Load the extent header from u8 array mutably.
-    pub fn load_from_u8_mut(data: &mut [u8]) -> Self {
-        unsafe { core::ptr::read(data.as_mut_ptr() as *mut _) }
+    pub fn load_from_u8_mut(data: &mut [u8]) -> &mut Self {
+        let ptr = data.as_mut_ptr() as *mut Self;
+        unsafe { &mut *ptr }
     }
 
     /// Is the node a leaf node?
@@ -150,7 +152,8 @@ impl Ext4Extent {
 
     /// Load the extent header from u32 array mutably.
     pub fn load_from_u32_mut(data: &mut [u32]) -> Self {
-        unsafe { core::ptr::read(data.as_mut_ptr() as *mut _) }
+        let ptr = data.as_mut_ptr() as *mut Self;
+        unsafe { *ptr }
     }
 
     /// Load the extent header from u8 array.
@@ -160,7 +163,8 @@ impl Ext4Extent {
 
     /// Load the extent header from u8 array mutably.
     pub fn load_from_u8_mut(data: &mut [u8]) -> Self {
-        unsafe { core::ptr::read(data.as_mut_ptr() as *mut _) }
+        let ptr = data.as_mut_ptr() as *mut Self;
+        unsafe { *ptr }
     }
 }
 
@@ -209,7 +213,7 @@ impl ExtentNode {
                 root_data[i] = u32::from_le_bytes(chunk.try_into().unwrap());
             }
 
-            let header = Ext4ExtentHeader::load_from_u32_mut(&mut root_data);
+            let header = *Ext4ExtentHeader::load_from_u32_mut(&mut root_data);
 
             Ok(ExtentNode {
                 header,
@@ -220,8 +224,7 @@ impl ExtentNode {
             if data.len() != BLOCK_SIZE {
                 return_errno_with_message!(Errno::EINVAL, "Invalid data length for root node");
             }
-            let header =
-                Ext4ExtentHeader::load_from_u8_mut(&mut data[..size_of::<Ext4ExtentHeader>()]);
+            let mut header = *Ext4ExtentHeader::load_from_u8_mut(&mut data[..size_of::<Ext4ExtentHeader>()]);
             Ok(ExtentNode {
                 header,
                 data: NodeData::Internal(data.to_vec()),
@@ -233,7 +236,7 @@ impl ExtentNode {
 
 impl ExtentNode {
     /// Binary search for the extent that contains the given block.
-    pub fn binsearch_extent(&self, lblock: Ext4Lblk) -> Option<(Ext4Extent, usize)> {
+    pub fn binsearch_extent(&mut self, lblock: Ext4Lblk) -> Option<(Ext4Extent, usize)> {
         // empty node
         if self.header.entries_count == 0 {
             match &self.data {
@@ -248,7 +251,7 @@ impl ExtentNode {
             }
         }
 
-        match &self.data {
+        match &mut self.data {
             NodeData::Root(root_data) => {
                 let header = self.header;
                 for i in 0..header.entries_count {
@@ -261,29 +264,23 @@ impl ExtentNode {
                 None
             }
             NodeData::Internal(internal_data) => {
-                let start = size_of::<Ext4ExtentHeader>();
-                let extents = &internal_data[start..];
-
-                let mut l = 0;
+                let mut l = 1;
                 let mut r = (self.header.entries_count - 1) as usize;
-
                 while l <= r {
-                    let m = l + (r - l) / 2;
-                    let offset = m * size_of::<Ext4Extent>();
-                    let extent = Ext4Extent::load_from_u8(&extents[offset..]);
+                    let mut m = l + (r - l) / 2;
+                    let offset = size_of::<Ext4ExtentHeader>() + m * size_of::<Ext4Extent>();
+                    let mut ext = Ext4Extent::load_from_u8_mut(&mut internal_data[offset..]);
 
-                    if lblock < extent.first_block {
-                        if m == 0 {
-                            break;
-                        }
+                    if (lblock < ext.first_block){
                         r = m - 1;
-                    } else if lblock >= extent.first_block + extent.block_count as Ext4Lblk {
+                    }else{
                         l = m + 1;
-                    } else {
-                        return Some((extent, m));
                     }
                 }
-                None
+
+                let offset = size_of::<Ext4ExtentHeader>() + (l - 1) * size_of::<Ext4Extent>();
+                let mut ext = Ext4Extent::load_from_u8_mut(&mut internal_data[offset..]);
+                return Some((ext, l - 1));
             }
         }
     }
@@ -581,7 +578,7 @@ mod tests {
             data
         };
 
-        let node = ExtentNode {
+        let mut node = ExtentNode {
             header: Ext4ExtentHeader {
                 entries_count: 2,
                 ..Default::default()
