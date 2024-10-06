@@ -204,7 +204,7 @@ impl Ext4Superblock {
     }
 
     pub fn set_free_blocks_count(&mut self, free_blocks: u64) {
-        self.free_blocks_count_lo = ((free_blocks << 32) >> 32) as u32;
+        self.free_blocks_count_lo = (free_blocks & 0xffffffff) as u32; 
 
         self.free_blocks_count_hi = (free_blocks >> 32) as u32;
     }

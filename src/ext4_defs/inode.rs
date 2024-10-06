@@ -92,7 +92,7 @@ impl Ext4Inode {
     }
 
     pub fn set_size(&mut self, size: u64) {
-        self.size = ((size << 32) >> 32) as u32;
+        self.size = (size & 0xffffffff) as u32;
         self.size_hi = (size >> 32) as u32;
     }
 
@@ -404,7 +404,7 @@ impl Ext4Inode {
     ) {
         let inode_size = super_block.inode_size();
 
-        self.osd2.l_i_checksum_lo = ((checksum << 16) >> 16) as u16;
+        self.osd2.l_i_checksum_lo = (checksum & 0xffff) as u16;
         if inode_size > 128 {
             self.i_checksum_hi = (checksum >> 16) as u16;
         }
