@@ -398,8 +398,8 @@ impl Ext4ExtentIndex {
 
     /// Stores the physical block number to which this extent points.
     pub fn store_pblock(&mut self, pblock: u64) {
-        self.leaf_lo = pblock as u32 & 0xffffffff;
-        self.leaf_hi = (((pblock as u32) << 31) << 1) as u16;
+        self.leaf_lo = (pblock & 0xffffffff) as u32;
+        self.leaf_hi = (pblock >> 32) as u16;
     }
 }
 
@@ -423,8 +423,8 @@ impl Ext4Extent {
 
     /// Stores the physical block number to which this extent points.
     pub fn store_pblock(&mut self, pblock: u64) {
-        self.start_lo = pblock as u32 & 0xffffffff;
-        self.start_hi = (((pblock as u32) << 31) << 1) as u16;
+        self.start_lo = (pblock & 0xffffffff) as u32;
+        self.start_hi = (pblock >> 32) as u16;
     }
 
     /// Returns true if the extent is unwritten.

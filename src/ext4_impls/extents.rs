@@ -409,8 +409,8 @@ impl Ext4 {
             }
             newex.first_block = to + 1;
             newex.block_count = (ee_block + block_count as u32 - 1 - to) as u16;
-            newex.start_lo = newblock as u32 & 0xffffffff;
-            newex.start_hi = (((newblock as u32) << 31) << 1) as u16;
+            newex.start_lo = (newblock & 0xffffffff) as u32;
+            newex.start_hi = (newblock >> 32) as u16;
 
             self.insert_extent(inode_ref, &mut newex)?;
 
