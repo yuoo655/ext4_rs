@@ -62,7 +62,7 @@ impl Ext4 {
                 index: None,
                 extent: Some(extent),
                 position: pos,
-                pblock: extent.get_pblock(),
+                pblock: lblock as u64 - extent.get_first_block() as u64 + extent.get_pblock(),
                 pblock_of_node: pblock_of_node,
             });
             search_path.maxdepth = node.header.depth;
