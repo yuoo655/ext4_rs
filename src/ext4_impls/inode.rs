@@ -24,10 +24,8 @@ impl Ext4 {
         let block_group =
             Ext4BlockGroup::load_new(self.block_device.clone(), &super_block, group as usize);
         let inode_table_blk_num = block_group.get_inode_table_blk_num();
-        let offset =
-            inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize;
 
-        offset
+        inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize
     }
 
     /// Load the inode reference from the disk.
@@ -39,7 +37,7 @@ impl Ext4 {
         let inode: &mut Ext4Inode = ext4block.read_as_mut();
 
         Ext4InodeRef {
-            inode_num: inode_num,
+            inode_num,
             inode: *inode,
         }
     }
@@ -75,7 +73,7 @@ impl Ext4 {
     /// Returns:
     /// `Result<Ext4Fsblk>` - physical block id
     pub fn get_pblock_idx(&self, inode_ref: &Ext4InodeRef, lblock: Ext4Lblk) -> Result<Ext4Fsblk> {
-        let search_path = self.find_extent(&inode_ref, lblock);
+        let search_path = self.find_extent(inode_ref, lblock);
         if let Ok(path) = search_path {
             // get the last path
             let path = path.path.last().unwrap();
@@ -106,14 +104,14 @@ impl Ext4 {
             .block_device
             .read_offset(block_bitmap_block as usize * BLOCK_SIZE);
         let mut data: &mut Vec<u8> = &mut block_bmap_raw_data;
-        let mut rel_blk_idx = 0 as u32;
+        let mut rel_blk_idx = 0;
 
-        ext4_bmap_bit_find_clr(data, index as u32, 0x8000, &mut rel_blk_idx);
-        ext4_bmap_bit_set(&mut data, rel_blk_idx);
+        ext4_bmap_bit_find_clr(data, index, 0x8000, &mut rel_blk_idx);
+        ext4_bmap_bit_set(data, rel_blk_idx);
 
-        block_group.set_block_group_balloc_bitmap_csum(&super_block, &data);
+        block_group.set_block_group_balloc_bitmap_csum(&super_block, data);
         self.block_device
-            .write_offset(block_bitmap_block as usize * BLOCK_SIZE, &data);
+            .write_offset(block_bitmap_block as usize * BLOCK_SIZE, data);
 
         /* Update superblock free blocks count */
         let mut super_blk_free_blocks = super_block.free_blocks_count();

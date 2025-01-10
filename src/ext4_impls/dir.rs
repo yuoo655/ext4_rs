@@ -48,7 +48,7 @@ impl Ext4 {
                     Block::load(self.block_device.clone(), fblock as usize * BLOCK_SIZE);
 
                 // find entry in block
-                let r = self.dir_find_in_block(&mut ext4block, name, result);
+                let r = self.dir_find_in_block(&ext4block, name, result);
 
                 if r.is_ok() {
                     result.pblock_id = fblock as usize;
@@ -187,7 +187,7 @@ impl Ext4 {
         let mut iblock = 0;
         while iblock < total_blocks {
             // get physical block id of a logical block id
-            let pblock = self.get_pblock_idx(&parent, iblock as u32)?;
+            let pblock = self.get_pblock_idx(parent, iblock as u32)?;
 
             // load physical block
             let mut ext4block =
@@ -264,7 +264,7 @@ impl Ext4 {
             let rec_len = de.entry_len;
 
             let used_len = de.name_len as usize;
-            let mut sz = core::mem::size_of::<Ext4FakeDirEntry>() + used_len as usize;
+            let mut sz = core::mem::size_of::<Ext4FakeDirEntry>() + used_len;
             if used_len % 4 != 0 {
                 sz += 4 - used_len % 4;
             }
@@ -338,11 +338,11 @@ impl Ext4 {
         // prev entry
         let pde: &mut Ext4DirEntry = ext4block.read_offset_as_mut(result.prev_offset);
 
-        (*pde).entry_len += de_del_entry_len;
+        pde.entry_len += de_del_entry_len;
 
         let de_del: &mut Ext4DirEntry = ext4block.read_offset_as_mut(result.offset);
 
-        (*de_del).inode = 0;
+        de_del.inode = 0;
 
         self.dir_set_csum(&mut ext4block, parent.inode.generation());
         ext4block.sync_blk_to_disk(self.block_device.clone());
@@ -383,7 +383,7 @@ impl Ext4 {
                 let mut offset = 0;
                 while offset < BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>() {
                     let de: Ext4DirEntry = ext4block.read_offset_as(offset);
-                    offset = offset + de.entry_len as usize;
+                    offset += de.entry_len as usize;
                     if de.inode == 0 {
                         continue;
                     }
@@ -404,7 +404,7 @@ impl Ext4 {
     pub fn dir_remove(&self, parent: u32, path: &str) -> Result<usize> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
 
-        let r = self.dir_find_entry(parent as u32, path, &mut search_result)?;
+        let r = self.dir_find_entry(parent, path, &mut search_result)?;
 
         let mut parent_inode_ref = self.get_inode_ref(parent);
         let mut child_inode_ref = self.get_inode_ref(search_result.dentry.inode);
@@ -424,7 +424,7 @@ impl Ext4 {
         // ext4_inode_set_links_cnt
         // ext4_fs_free_inode(&child)
 
-        return Ok(EOK);
+        Ok(EOK)
     }
 }
 

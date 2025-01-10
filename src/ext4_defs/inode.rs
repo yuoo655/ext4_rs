@@ -423,7 +423,7 @@ impl Ext4Inode {
         let orig_checksum = self.get_checksum(super_block);
         let mut checksum = 0;
 
-        let ino_index = inode_id as u32;
+        let ino_index = inode_id;
         let ino_gen = self.generation;
 
         // Preparation: temporarily set bg checksum to 0

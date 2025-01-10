@@ -24,7 +24,7 @@ pub fn path_check(path: &str, is_goal: &mut bool) -> usize {
 
     // 如果没有找到 '/' 或 '\0'，且长度小于最大文件名长度
     *is_goal = true;
-    return path.len();
+    path.len()
 }
 
 #[cfg(test)]

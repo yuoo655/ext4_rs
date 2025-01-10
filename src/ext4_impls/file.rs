@@ -30,7 +30,7 @@ impl Ext4 {
             // let child_ref = child.clone();
             let new_child_ref = Ext4InodeRef {
                 inode_num: child.inode_num,
-                inode: child.inode.clone(),
+                inode: child.inode,
             };
 
             // at this point child need a new block
@@ -101,7 +101,6 @@ impl Ext4 {
         let inode_size = self.super_block.inode_size();
         let extra_size = self.super_block.extra_size();
         if inode_size > EXT4_GOOD_OLD_INODE_SIZE {
-            let extra_size = extra_size;
             inode.set_i_extra_isize(extra_size);
         }
 
@@ -110,8 +109,8 @@ impl Ext4 {
         inode.extent_tree_init();
 
         let inode_ref = Ext4InodeRef {
-            inode_num: inode_num,
-            inode: inode,
+            inode_num,
+            inode,
         };
 
         Ok(inode_ref)
@@ -413,7 +412,7 @@ impl Ext4 {
         let r = self.unlink(
             &mut parent_inode_ref,
             &mut child_inode_ref,
-            &p[..len as usize],
+            &p[..len],
         )?;
 
 
@@ -443,7 +442,7 @@ impl Ext4 {
         let diff_blocks_cnt = old_blocks_cnt - new_blocks_cnt;
 
         if diff_blocks_cnt > 0{
-            self.extent_remove_space(inode_ref, new_blocks_cnt, EXT_MAX_BLOCKS as u32)?;
+            self.extent_remove_space(inode_ref, new_blocks_cnt, EXT_MAX_BLOCKS)?;
         }
 
         inode_ref.inode.set_size(new_size);

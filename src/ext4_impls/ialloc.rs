@@ -31,16 +31,16 @@ impl Ext4 {
 
                 let mut bitmap_data = &mut raw_data[..];
 
-                let mut idx_in_bg = 0 as u32;
+                let mut idx_in_bg = 0;
 
                 ext4_bmap_bit_find_clr(bitmap_data, 0, inodes_in_bg, &mut idx_in_bg);
-                ext4_bmap_bit_set(&mut bitmap_data, idx_in_bg);
+                ext4_bmap_bit_set(bitmap_data, idx_in_bg);
 
                 // update bitmap in disk
                 self.block_device
-                    .write_offset(inode_bitmap_block as usize * BLOCK_SIZE, &bitmap_data);
+                    .write_offset(inode_bitmap_block as usize * BLOCK_SIZE, bitmap_data);
 
-                bg.set_block_group_ialloc_bitmap_csum(&super_block, &bitmap_data);
+                bg.set_block_group_ialloc_bitmap_csum(&super_block, bitmap_data);
 
                 /* Modify filesystem counters */
                 free_inodes -= 1;
@@ -54,7 +54,7 @@ impl Ext4 {
 
                 /* Decrease unused inodes count */
                 let mut unused = bg.get_itable_unused(&super_block);
-                let free = inodes_in_bg - unused as u32;
+                let free = inodes_in_bg - unused;
                 if idx_in_bg >= free {
                     unused = inodes_in_bg - (idx_in_bg + 1);
                     bg.set_itable_unused(&super_block, unused);

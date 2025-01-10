@@ -258,7 +258,7 @@ impl ExtentNode {
                 let mut r = header.entries_count as usize - 1;
                 while l <= r {
                     let m = l + (r - l) / 2;
-                    let idx = (3 + m * 3) as usize;
+                    let idx = 3 + m * 3;
                     let ext = Ext4Extent::load_from_u32(&root_data[idx..]);
                     if lblock < ext.first_block {
                         r = m - 1;
@@ -266,10 +266,10 @@ impl ExtentNode {
                         l = m + 1;
                     }
                 }
-                let idx = (3 + (l - 1) * 3) as usize;
+                let idx = 3 + (l - 1) * 3;
                 let ext = Ext4Extent::load_from_u32(&root_data[idx..]);
     
-                return Some((ext, l - 1));
+                Some((ext, l - 1))
             }
             NodeData::Internal(internal_data) => {
                 let mut l = 1;
@@ -289,7 +289,7 @@ impl ExtentNode {
                 let offset = size_of::<Ext4ExtentHeader>() + (l - 1) * size_of::<Ext4Extent>();
                 let mut ext = Ext4Extent::load_from_u8_mut(&mut internal_data[offset..]);
 
-                return Some((ext, l - 1));
+                Some((ext, l - 1))
             }
         }
     }
@@ -455,26 +455,6 @@ impl Ext4Extent {
         self.block_count = len;
     }
 
-    /// Can merge next extent to this extent?
-    pub fn can_append(&self, next: &Self) -> bool {
-        self.first_block + self.get_actual_len() as u32 == next.first_block
-            && if self.is_unwritten() {
-                self.get_actual_len() + next.get_actual_len() <= EXT_UNWRITTEN_MAX_LEN
-            } else {
-                self.get_actual_len() + next.get_actual_len() <= EXT_INIT_MAX_LEN
-            }
-    }
-
-    /// Can merge this extent to previous extent?
-    pub fn can_prepend(&self, prev: &Self) -> bool {
-        prev.first_block + prev.get_actual_len() as u32 == self.first_block
-            && if self.is_unwritten() {
-                self.get_actual_len() + prev.get_actual_len() <= EXT_UNWRITTEN_MAX_LEN
-            } else {
-                self.get_actual_len() + prev.get_actual_len() <= EXT_INIT_MAX_LEN
-            }
-    }
-
     /// Marks the extent as unwritten.
     pub fn mark_unwritten(&mut self) {
         self.block_count |= EXT_INIT_MAX_LEN;
@@ -534,6 +514,12 @@ impl SearchPath {
             maxdepth: 4,
             path: vec![],
         }
+    }
+}
+
+impl Default for SearchPath {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

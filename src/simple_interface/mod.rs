@@ -66,8 +66,7 @@ impl Ext4 {
             create = true;
         }
 
-        let r = self.generic_open(path, &mut parent_inode_num, create, filetype.bits(), &mut 0);
-        r
+        self.generic_open(path, &mut parent_inode_num, create, filetype.bits(), &mut 0)
     }
 
     /// Create a new directory at the specified path.
@@ -80,17 +79,17 @@ impl Ext4 {
     /// 
     /// # Returns
     /// * `Result<u32>` - The inode number of the newly created directory if successful, 
-    /// or an error (`Errno::EEXIST`) if the directory already exists.
+    ///   or an error (`Errno::EEXIST`) if the directory already exists.
     pub fn ext4_dir_mk(&self, path: &str) -> Result<u32> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
-        let r = self.dir_find_entry(ROOT_INODE as u32, path, &mut search_result);
+        let r = self.dir_find_entry(ROOT_INODE, path, &mut search_result);
         if r.is_ok() {
             return_errno!(Errno::EEXIST);
         }
         let mut parent_inode_num = ROOT_INODE;
         let filetype = InodeFileType::S_IFDIR;
-        let r = self.generic_open(path, &mut parent_inode_num, true, filetype.bits(), &mut 0);
-        r
+
+        self.generic_open(path, &mut parent_inode_num, true, filetype.bits(), &mut 0)
     }
 
 
@@ -109,8 +108,7 @@ impl Ext4 {
     ) -> Result<u32> {
         let mut parent_inode_num = ROOT_INODE;
         let filetype = InodeFileType::S_IFDIR;
-        let r = self.generic_open(path, &mut parent_inode_num, false, filetype.bits(), &mut 0);
-        r
+        self.generic_open(path, &mut parent_inode_num, false, filetype.bits(), &mut 0)
     }
 
     /// Read data from a file starting from a given offset.

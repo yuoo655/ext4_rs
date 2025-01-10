@@ -188,7 +188,7 @@ impl Ext4 {
             None => InodeFileType::S_IFDIR,
         };
         let mode = file_type.bits();
-        let inode_ref = self.create_with_attr(parent as u32, name, mode as u16, uid as u16, gid as u16)?;
+        let inode_ref = self.create_with_attr(parent as u32, name, mode, uid as u16, gid as u16)?;
 
         Ok(inode_ref)
     }
@@ -219,7 +219,7 @@ impl Ext4 {
         let r = self.unlink(
             &mut parent_inode_ref,
             &mut child_inode_ref,
-            &p[..len as usize],
+            &p[..len],
         )?;
 
         Ok(EOK)
@@ -244,7 +244,7 @@ impl Ext4 {
         // ext4_inode_set_links_cnt
         // ext4_fs_free_inode(&child)
 
-        return Ok(EOK);
+        Ok(EOK)
     }
     /// Create a symbolic link.
     pub fn fuse_symlink(&mut self, parent: u64, link_name: &str, target: &str) -> Result<usize> {
@@ -258,7 +258,7 @@ impl Ext4 {
         let file_type = InodeFileType::S_IFLNK;
         mode |= file_type.bits();
 
-        let inode_ref = self.create(parent as u32, link_name, mode as u16)?;
+        let inode_ref = self.create(parent as u32, link_name, mode)?;
         Ok(EOK)
     }
     /// Create a hard link.
@@ -298,24 +298,17 @@ impl Ext4 {
         let can_execute = file_perm.contains(InodePerm::S_IEXEC);
 
         // If trying to open the file in write mode, check for write permissions
-        if (flags & O_WRONLY != 0) || (flags & O_RDWR != 0) {
-            if !can_write {
-                return_errno_with_message!(Errno::EACCES, "Permission denied can not write");
-            }
+        if ((flags & O_WRONLY != 0) || (flags & O_RDWR != 0)) && !can_write {
+            return_errno_with_message!(Errno::EACCES, "Permission denied can not write");
+        }
+        // If trying to open the file in read mode, check for read permissions
+        if ((flags & O_RDONLY != 0) || (flags & O_RDWR != 0)) && !can_read {
+            return_errno_with_message!(Errno::EACCES, "Permission denied can not read");
         }
 
         // If trying to open the file in read mode, check for read permissions
-        if (flags & O_RDONLY != 0) || (flags & O_RDWR != 0) {
-            if !can_read {
-                return_errno_with_message!(Errno::EACCES, "Permission denied can not read");
-            }
-        }
-
-        // If trying to open the file in read mode, check for read permissions
-        if (flags & O_EXCL != 0) || (flags & O_RDWR != 0) {
-            if !can_execute {
-                return_errno_with_message!(Errno::EACCES, "Permission denied can not exec");
-            }
+        if ((flags & O_EXCL != 0) || (flags & O_RDWR != 0)) && !can_execute {
+            return_errno_with_message!(Errno::EACCES, "Permission denied can not exec");
         }
 
         Ok(EOK)
@@ -440,24 +433,18 @@ impl Ext4 {
             let can_execute = file_perm.contains(InodePerm::S_IEXEC);
 
             // If trying to open the file in write mode, check for write permissions
-            if (flags & O_WRONLY != 0) || (flags & O_RDWR != 0) {
-                if !can_write {
-                    return_errno_with_message!(Errno::EACCES, "Permission denied can not write");
-                }
+            if ((flags & O_WRONLY != 0) || (flags & O_RDWR != 0)) && !can_write {
+                return_errno_with_message!(Errno::EACCES, "Permission denied can not write");
             }
 
             // If trying to open the file in read mode, check for read permissions
-            if (flags & O_RDONLY != 0) || (flags & O_RDWR != 0) {
-                if !can_read {
-                    return_errno_with_message!(Errno::EACCES, "Permission denied can not read");
-                }
+            if (flags & O_RDONLY != 0) || (flags & O_RDWR != 0) && !can_read{
+                return_errno_with_message!(Errno::EACCES, "Permission denied can not read");
             }
 
             // If trying to open the file in read mode, check for read permissions
-            if (flags & O_EXCL != 0) || (flags & O_RDWR != 0) {
-                if !can_execute {
-                    return_errno_with_message!(Errno::EACCES, "Permission denied can not exec");
-                }
+            if (flags & O_EXCL != 0) || (flags & O_RDWR != 0) && !can_execute {
+                return_errno_with_message!(Errno::EACCES, "Permission denied can not exec");
             }
 
             return Ok(EOK);

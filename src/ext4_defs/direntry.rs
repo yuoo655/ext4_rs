@@ -112,7 +112,7 @@ impl Default for Ext4DirEntry {
 impl<T> TryFrom<&[T]> for Ext4DirEntry {
     type Error = u64;
     fn try_from(data: &[T]) -> core::result::Result<Self, u64> {
-        let data = data;
+        // let data = data;
         Ok(unsafe { core::ptr::read(data.as_ptr() as *const _) })
     }
 }
@@ -145,8 +145,7 @@ impl Ext4DirEntry {
 
     /// Dir type
     pub fn get_de_type(&self) -> u8 {
-        let de_type = unsafe { self.inner.inode_type } as u8;
-        de_type
+        unsafe { self.inner.inode_type }
     }
 
     /// Get name to string
@@ -159,8 +158,7 @@ impl Ext4DirEntry {
 
     /// Get name len
     pub fn get_name_len(&self) -> usize {
-        let name_len = self.name_len as usize;
-        name_len
+        self.name_len as usize
     }
 
     /// 计算目录项的实际使用长度（不包括填充字节）

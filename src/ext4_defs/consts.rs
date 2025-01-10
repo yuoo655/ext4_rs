@@ -22,7 +22,7 @@ pub const EXT4_INODE_FLAG_EXTENTS: usize = 0x00080000; /* Inode uses extents */
 /// Extent
 pub const EXT_INIT_MAX_LEN: u16 = 32768;
 pub const EXT_UNWRITTEN_MAX_LEN: u16 = 65535;
-pub const EXT_MAX_BLOCKS: Ext4Lblk = core::u32::MAX;
+pub const EXT_MAX_BLOCKS: Ext4Lblk = u32::MAX;
 pub const EXT4_EXTENT_MAGIC: u16 = 0xF30A;
 
 /// BLock group descriptor flags.

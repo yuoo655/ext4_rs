@@ -35,8 +35,7 @@ impl Block {
     pub fn read_as<T: Copy>(&self) -> T {
         unsafe {
             let ptr = self.data.as_ptr() as *const T;
-            let value = ptr.read_unaligned();
-            value
+            ptr.read_unaligned()
         }
     }
 
@@ -44,8 +43,7 @@ impl Block {
     pub fn read_offset_as<T: Copy>(&self, offset: usize) -> T {
         unsafe {
             let ptr = self.data.as_ptr().add(offset) as *const T;
-            let value = ptr.read_unaligned();
-            value
+            ptr.read_unaligned()
         }
     }
 

@@ -154,16 +154,14 @@ impl Ext4BlockGroup {
 
         // cast self to &[u8]
         let self_bytes =
-            unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 0x40 as usize) };
+            unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 0x40) };
 
         // bg checksum
         checksum = ext4_crc32c(checksum, self_bytes, desc_size as u32);
 
         self.checksum = orig_checksum;
 
-        let crc = (checksum & 0xFFFF) as u16;
-
-        crc
+        (checksum & 0xFFFF) as u16
     }
 
     /// Synchronize the block group data to disk.

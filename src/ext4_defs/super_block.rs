@@ -173,7 +173,7 @@ impl Ext4Superblock {
         let size = self.desc_size;
 
         if size < EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
-            return EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE as u16;
+            EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE
         } else {
             size
         }
@@ -220,7 +220,7 @@ impl Ext4Superblock {
         let data = unsafe {
             core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
         };
-        let checksum = ext4_crc32c(EXT4_CRC32_INIT, &data, 0x3fc);
+        let checksum = ext4_crc32c(EXT4_CRC32_INIT, data, 0x3fc);
 
         self.checksum = checksum;
         let data = unsafe {
@@ -237,7 +237,7 @@ impl Ext4Superblock {
         let blocks_per_group = self.blocks_per_group;
         let uuid = self.uuid;
         csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
-        csum = ext4_crc32c(csum, bitmap, (blocks_per_group / 8) as u32);
+        csum = ext4_crc32c(csum, bitmap, blocks_per_group / 8);
         csum
     }
 
