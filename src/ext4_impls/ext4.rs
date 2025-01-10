@@ -42,7 +42,7 @@ impl Ext4 {
             let len = path_check(search_path, &mut is_goal);
 
             let current_path = &search_path[..len];
-
+            
             if len == 0 || search_path.is_empty() {
                 break;
             }
@@ -50,7 +50,7 @@ impl Ext4 {
             search_path = &search_path[len..];
 
             let r = self.dir_find_entry(*parent, current_path, &mut dir_search_result);
-
+            
             // log::trace!("find in parent {:x?} r {:?} name {:?}", parent, r, current_path);
             if let Err(e) = r {
                 if e.error() != Errno::ENOENT.into() || !create {
@@ -66,8 +66,11 @@ impl Ext4 {
 
                 let new_inode_ref = self.create(*parent, current_path, inode_mode)?;
 
-                // not goal update parent
+                // Update parent to the new inode
                 *parent = new_inode_ref.inode_num;
+
+                // Now, update dir_search_result to reflect the new inode
+                dir_search_result.dentry.inode = new_inode_ref.inode_num;
                 
                 continue;
             }
