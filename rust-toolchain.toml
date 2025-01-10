@@ -1,0 +1,4 @@
+[toolchain]
+channel = "nightly-2024-06-01"
+components = [ "llvm-tools-preview" ]
+profile = "default"
