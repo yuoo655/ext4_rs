@@ -88,9 +88,9 @@ impl Ext4 {
         newex: &mut Ext4Extent,
     ) -> Result<()> {
         let newex_first_block = newex.first_block;
-
+        
         let mut search_path = self.find_extent(inode_ref, newex_first_block)?;
-
+        
         let depth = search_path.depth as usize;
         let node = &search_path.path[depth]; // Get the node at the current depth
 
@@ -190,28 +190,69 @@ impl Ext4 {
     }
 
     /// Check if two extents can be merged.
+    ///
+    /// This function determines whether two extents, `ex1` and `ex2`, can be merged
+    /// into a single extent. Extents are contiguous ranges of blocks in the ext4
+    /// filesystem that map logical block numbers to physical block numbers.
+    ///
+    /// # Arguments
+    ///
+    /// * `ex1` - The first extent to check.
+    /// * `ex2` - The second extent to check.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the extents can be merged.
+    /// * `false` otherwise.
+    ///
+    /// # Merge Conditions
+    ///
+    /// 1. **Same Unwritten State**:
+    ///    - The `is_unwritten` state of both extents must be the same.
+    ///    - Unwritten extents are placeholders for blocks that are allocated but not initialized.
+    ///
+    /// 2. **Contiguous Block Ranges**:
+    ///    - The logical block range of the first extent must immediately precede
+    ///      the logical block range of the second extent.
+    ///
+    /// 3. **Maximum Length**:
+    ///    - The total length of the merged extent must not exceed the maximum allowed
+    ///      extent length (`EXT_INIT_MAX_LEN`).
+    ///    - If the extents are unwritten, the total length must also not exceed
+    ///      the maximum length for unwritten extents (`EXT_UNWRITTEN_MAX_LEN`).
+    ///
+    /// 4. **Contiguous Physical Blocks**:
+    ///    - The physical block range of the first extent must immediately precede
+    ///      the physical block range of the second extent. This ensures that the
+    ///      physical storage is contiguous.
     fn can_merge(&self, ex1: &Ext4Extent, ex2: &Ext4Extent) -> bool {
         // Check if the extents have the same unwritten state
         if ex1.is_unwritten() != ex2.is_unwritten() {
             return false;
         }
-
+        let ext1_ee_len = ex1.get_actual_len();
+        let ext2_ee_len = ex2.get_actual_len();
+        
         // Check if the block ranges are contiguous
-        if ex1.first_block + ex1.block_count as u32 != ex2.first_block {
+        if ex1.first_block + ext1_ee_len as u32 != ex2.first_block {
             return false;
         }
 
         // Check if the merged length would exceed the maximum allowed length
-        if ex1.block_count + ex2.block_count > EXT_INIT_MAX_LEN as u16 {
+        if ext1_ee_len + ext2_ee_len > EXT_INIT_MAX_LEN as u16 {
             return false;
         }
 
         // Check if the merged length would exceed the maximum allowed length for unwritten extents
-        if ex1.is_unwritten() && ex1.block_count + ex2.block_count > EXT_UNWRITTEN_MAX_LEN as u16 {
+        if ex1.is_unwritten() && ext1_ee_len + ext2_ee_len > EXT_UNWRITTEN_MAX_LEN as u16 {
             return false;
         }
 
-        true
+        // Check if the physical blocks are contiguous
+        if ex1.get_pblock() + ext1_ee_len as u64 == ex2.get_pblock() {
+            return true;
+        }
+        false
     }
 
     fn merge_extent(
@@ -220,16 +261,31 @@ impl Ext4 {
         left_ext: &mut Ext4Extent,
         right_ext: &Ext4Extent,
     ) -> Result<()> {
-        let depth = search_path.depth as usize;
-        left_ext.block_count += right_ext.block_count;
 
-        if left_ext.first_block >= 0x20000{
+        let unwritten = left_ext.is_unwritten();
+        let len = left_ext.get_actual_len() + right_ext.get_actual_len();
+        left_ext.set_actual_len(len);
+        if unwritten {
+            left_ext.mark_unwritten();
+        }
+        let depth = search_path.depth as usize;
+
+        let header = search_path.path[depth].header;
+
+        if header.max_entries_count > 4 {
             let node = &search_path.path[depth];
             let block = node.pblock_of_node;
             let new_ex_offset = core::mem::size_of::<Ext4ExtentHeader>() + core::mem::size_of::<Ext4Extent>() * (node.position);
             let mut ext4block = Block::load(self.block_device.clone(), block * BLOCK_SIZE);
             let left_ext:&mut Ext4Extent = ext4block.read_offset_as_mut(new_ex_offset);
-            left_ext.block_count += 1;
+
+            let unwritten = left_ext.is_unwritten();
+            let len = left_ext.get_actual_len() + right_ext.get_actual_len();
+            left_ext.set_actual_len(len);
+            if unwritten {
+                left_ext.mark_unwritten();
+            }
+
             ext4block.sync_blk_to_disk(self.block_device.clone());
         }
 
@@ -264,7 +320,7 @@ impl Ext4 {
             return Ok(());
         }else{
             // insert at nonroot
-            log::trace!("insert newex at pos {:x?} current entry_count {:x?} ex {:x?}", node.position + 1 , header.entries_count, new_extent);
+            // log::trace!("insert newex at nonroot pos {:x?} current entry_count {:x?} ex {:x?}", node.position + 1 , header.entries_count, new_extent);
 
             // load block
             let node_block = node.pblock_of_node;
@@ -332,6 +388,7 @@ impl Ext4 {
         new_header.set_magic();
         let space = (BLOCK_SIZE - core::mem::size_of::<Ext4ExtentHeader>()) / core::mem::size_of::<Ext4Extent>();
         new_header.set_max_entries_count(space as u16);
+        log::info!("new_header max entries {:x?}", new_header.max_entries_count);
         
         // Update top-level index: num,max,pointer
         let mut root_header = inode_ref.inode.root_extent_header_mut();
