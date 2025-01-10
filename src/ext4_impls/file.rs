@@ -371,7 +371,7 @@ impl Ext4 {
 
         // Update file size if necessary
         if offset + write_buf_len > file_size as usize {
-            log::trace!("set file size {:x}", offset + write_buf_len);
+            // log::trace!("set file size {:x}", offset + write_buf_len);
             inode_ref
                 .inode
                 .set_size((offset + write_buf_len) as u64);

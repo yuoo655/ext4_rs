@@ -381,7 +381,7 @@ impl Ext4Inode {
         unsafe {
             (*header_ptr).set_magic();
             (*header_ptr).set_entries_count(0);
-            (*header_ptr).set_max_entries_count(4); // 假设最大条目数为 4
+            (*header_ptr).set_max_entries_count(4);
             (*header_ptr).set_depth(0);
             (*header_ptr).set_generation(0);
         }
