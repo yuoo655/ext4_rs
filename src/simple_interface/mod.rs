@@ -87,9 +87,10 @@ impl Ext4 {
         if r.is_ok() {
             return_errno!(Errno::EEXIST);
         }
-        let file_type = InodeFileType::S_IFDIR;
-        let inode_ref = self.create(ROOT_INODE as u32, path, file_type.bits() as u16)?;
-        Ok(inode_ref.inode_num)
+        let mut parent_inode_num = ROOT_INODE;
+        let filetype = InodeFileType::S_IFDIR;
+        let r = self.generic_open(path, &mut parent_inode_num, true, filetype.bits(), &mut 0);
+        r
     }
 
 
