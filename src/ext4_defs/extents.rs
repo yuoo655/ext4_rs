@@ -254,32 +254,41 @@ impl ExtentNode {
         match &mut self.data {
             NodeData::Root(root_data) => {
                 let header = self.header;
-                for i in 0..header.entries_count {
-                    let idx = (3 + i * 3) as usize;
+                let mut l = 1;
+                let mut r = header.entries_count as usize - 1;
+                while l <= r {
+                    let m = l + (r - l) / 2;
+                    let idx = (3 + m * 3) as usize;
                     let ext = Ext4Extent::load_from_u32(&root_data[idx..]);
-                    if lblock >= ext.first_block && lblock <= ext.first_block + ext.get_actual_len() as u32 {
-                        return Some((ext, i as usize));
+                    if lblock < ext.first_block {
+                        r = m - 1;
+                    } else {
+                        l = m + 1;
                     }
                 }
-                None
+                let idx = (3 + (l - 1) * 3) as usize;
+                let ext = Ext4Extent::load_from_u32(&root_data[idx..]);
+    
+                return Some((ext, l - 1));
             }
             NodeData::Internal(internal_data) => {
                 let mut l = 1;
                 let mut r = (self.header.entries_count - 1) as usize;
+    
                 while l <= r {
-                    let mut m = l + (r - l) / 2;
+                    let m = l + (r - l) / 2;
                     let offset = size_of::<Ext4ExtentHeader>() + m * size_of::<Ext4Extent>();
                     let mut ext = Ext4Extent::load_from_u8_mut(&mut internal_data[offset..]);
 
-                    if (lblock < ext.first_block){
+                    if lblock < ext.first_block {
                         r = m - 1;
-                    }else{
-                        l = m + 1;
+                    } else {
+                        l = m + 1;  // Otherwise, move to the right half
                     }
                 }
-
                 let offset = size_of::<Ext4ExtentHeader>() + (l - 1) * size_of::<Ext4Extent>();
                 let mut ext = Ext4Extent::load_from_u8_mut(&mut internal_data[offset..]);
+
                 return Some((ext, l - 1));
             }
         }
@@ -439,6 +448,11 @@ impl Ext4Extent {
         } else {
             self.block_count
         }
+    }
+
+    /// Set the actual length of the extent.
+    pub fn set_actual_len(&mut self, len: u16){
+        self.block_count = len;
     }
 
     /// Can merge next extent to this extent?
