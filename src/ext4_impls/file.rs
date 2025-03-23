@@ -67,7 +67,9 @@ impl Ext4 {
         // let mut child_inode_ref = self.create_inode(inode_mode)?;
         let init_child_ref = self.create_inode(inode_mode)?;
 
+        
         self.write_back_inode_without_csum(&init_child_ref);
+
         // load new
         let mut child_inode_ref = self.get_inode_ref(init_child_ref.inode_num);
 
@@ -75,7 +77,8 @@ impl Ext4 {
 
         self.write_back_inode(&mut parent_inode_ref);
         self.write_back_inode(&mut child_inode_ref);
-
+        self.flush_cache();
+        
         Ok(child_inode_ref)
     }
 
@@ -290,18 +293,20 @@ impl Ext4 {
                 self.append_inode_pblk_from(&mut inode_ref, &mut start_bgid)?
             };
 
-            let mut block =
-                Block::load(self.block_device.clone(), pblock_idx as usize * BLOCK_SIZE);
+            let mut block = self.read_offset(pblock_idx as usize * BLOCK_SIZE);
+                // Block::load(self.block_device.clone(), pblock_idx as usize * BLOCK_SIZE);
 
             block.write_offset(unaligned, &write_buf[..len], len);
             block.sync_blk_to_disk(self.block_device.clone());
             drop(block);
-
-
+            
+            
             written += len;
             iblk_idx += 1;
         }
-
+        
+        self.flush_cache();
+        
         // Aligned write
         while written < write_buf_len {
             // Get the physical block id, if the block is not present, append a new block
@@ -313,7 +318,8 @@ impl Ext4 {
             };
 
             let block_offset = pblock_idx as usize * BLOCK_SIZE;
-            let mut block = Block::load(self.block_device.clone(), block_offset);
+            let mut block = self.read_offset(pblock_idx as usize * BLOCK_SIZE);
+            // Block::load(self.block_device.clone(), block_offset);
             let write_size = min(BLOCK_SIZE, write_buf_len - written);
             block.write_offset(0, &write_buf[written..written + write_size], write_size);
             block.sync_blk_to_disk(self.block_device.clone());
@@ -321,6 +327,7 @@ impl Ext4 {
             written += write_size;
             iblk_idx += 1;
         }
+        self.flush_cache();
 
         // Update file size if necessary
         if offset + write_buf_len > file_size as usize {

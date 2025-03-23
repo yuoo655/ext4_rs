@@ -34,22 +34,17 @@ pub struct Ext4BlockGroup {
 }
 
 impl Ext4BlockGroup {
-    /// Load the block group descriptor from the disk.
-    pub fn load_new(
-        block_device: Arc<dyn BlockDevice>,
+    pub fn block_group_disk_pos(
         super_block: &Ext4Superblock,
         block_group_idx: usize,
-    ) -> Self {
+    ) -> (usize, usize) {
         let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
         let dsc_id = block_group_idx / dsc_cnt;
         let first_data_block = super_block.first_data_block;
         let block_id = first_data_block as usize + dsc_id + 1;
         let offset = (block_group_idx % dsc_cnt) * super_block.desc_size as usize;
 
-        let ext4block = Block::load(block_device, block_id * BLOCK_SIZE);
-        let bg: Ext4BlockGroup = ext4block.read_offset_as(offset);
-
-        bg
+        (block_id, offset)
     }
 }
 
@@ -94,7 +89,7 @@ impl Ext4BlockGroup {
 
     /// Set the count of used directories in this block group.
     pub fn set_used_dirs_count(&mut self, s: &Ext4Superblock, cnt: u32) {
-        self.itable_unused_lo = (cnt & 0xffff) as u16; 
+        self.itable_unused_lo = (cnt & 0xffff) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.itable_unused_hi = (cnt >> 16) as u16;
         }
@@ -102,7 +97,7 @@ impl Ext4BlockGroup {
 
     /// Set the count of unused inodes in this block group.
     pub fn set_itable_unused(&mut self, s: &Ext4Superblock, cnt: u32) {
-        self.itable_unused_lo = (cnt & 0xffff) as u16; 
+        self.itable_unused_lo = (cnt & 0xffff) as u16;
         if s.desc_size() > EXT4_MIN_BLOCK_GROUP_DESCRIPTOR_SIZE {
             self.itable_unused_hi = (cnt >> 16) as u16;
         }
@@ -164,42 +159,10 @@ impl Ext4BlockGroup {
         (checksum & 0xFFFF) as u16
     }
 
-    /// Synchronize the block group data to disk.
-    pub fn sync_block_group_to_disk(
-        &self,
-        block_device: Arc<dyn BlockDevice>,
-        bgid: usize,
-        super_block: &Ext4Superblock,
-    ) {
-        let dsc_cnt = BLOCK_SIZE / super_block.desc_size as usize;
-        // let dsc_per_block = dsc_cnt;
-        let dsc_id = bgid / dsc_cnt;
-        // let first_meta_bg = super_block.first_meta_bg;
-        let first_data_block = super_block.first_data_block;
-        let block_id = first_data_block as usize + dsc_id + 1;
-        let offset = (bgid % dsc_cnt) * super_block.desc_size as usize;
-
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4BlockGroup>())
-        };
-        block_device.write_offset(block_id * BLOCK_SIZE + offset, data);
-    }
-
     /// Set the checksum of the block group descriptor.
     pub fn set_block_group_checksum(&mut self, bgid: u32, super_block: &Ext4Superblock) {
         let csum = self.get_block_group_checksum(bgid, super_block);
         self.checksum = csum;
-    }
-
-    /// Synchronize the block group data to disk with checksum.
-    pub fn sync_to_disk_with_csum(
-        &mut self,
-        block_device: Arc<dyn BlockDevice>,
-        bgid: usize,
-        super_block: &Ext4Superblock,
-    ) {
-        self.set_block_group_checksum(bgid as u32, super_block);
-        self.sync_block_group_to_disk(block_device, bgid, super_block)
     }
 
     /// Set the block allocation bitmap checksum for this block group.
@@ -230,10 +193,9 @@ impl Ext4BlockGroup {
 
     /// Set the count of free blocks in this block group.
     pub fn set_free_blocks_count(&mut self, cnt: u32) {
-        self.free_blocks_count_lo = (cnt & 0xffff) as u16; 
+        self.free_blocks_count_lo = (cnt & 0xffff) as u16;
         self.free_blocks_count_hi = (cnt >> 16) as u16;
     }
-
 
     /// Set the inode allocation bitmap checksum for this block group.
     pub fn set_block_group_ialloc_bitmap_csum(&mut self, s: &Ext4Superblock, bitmap: &[u8]) {

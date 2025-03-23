@@ -20,7 +20,7 @@ pub struct Ext4Superblock {
     write_time: u32,               // 写入时间
     mount_count: u16,              // 挂载次数
     max_mount_count: u16,          // 最大挂载次数
-    magic: u16,                    // 魔数，0xEF53
+    pub magic: u16,                    // 魔数，0xEF53
     state: u16,                    // 文件系统状态
     errors: u16,                   // 检测到错误时的行为
     minor_rev_level: u16,          // 次版本号
@@ -209,25 +209,10 @@ impl Ext4Superblock {
         self.free_blocks_count_hi = (free_blocks >> 32) as u32;
     }
 
-    pub fn sync_to_disk(&self, block_device: Arc<dyn BlockDevice>) {
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
-        };
-        block_device.write_offset(SUPERBLOCK_OFFSET, data);
-    }
-
-    pub fn sync_to_disk_with_csum(&mut self, block_device: Arc<dyn BlockDevice>) {
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
-        };
-        let checksum = ext4_crc32c(EXT4_CRC32_INIT, data, 0x3fc);
-
+    pub fn set_checksum(&mut self, checksum:u32){
         self.checksum = checksum;
-        let data = unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Ext4Superblock>())
-        };
-        block_device.write_offset(SUPERBLOCK_OFFSET, data);
     }
+
 }
 
 impl Ext4Superblock {

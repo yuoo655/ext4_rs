@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::return_errno_with_message;
+use crate::utils::*;
 
 use super::*;
 
@@ -54,6 +55,13 @@ pub struct Ext4Extent {
 
     /// Lower 32-bits of the block number to which this extent points.
     pub start_lo: u32,
+}
+
+/// Structure representing an Ext4 extent tail.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct Ext4ExtentTail{
+    et_checksum: u32,
 }
 
 /// Extent tree node. Includes the header, the data.
@@ -504,6 +512,44 @@ impl Ext4ExtentHeader {
 
     pub fn set_max_entries_count(&mut self, max_entries_count: u16) {
         self.max_entries_count = max_entries_count;
+    }
+}
+
+impl Ext4ExtentTail{
+    pub fn set_checksum(&mut self, checksum: u32){
+        self.et_checksum = checksum;
+    }
+    
+    pub fn tail_set_csum(
+        &mut self,
+        s: &Ext4Superblock,
+        blk_data: &[u8],
+        inode_num: u32,
+        ino_gen: u32,
+    ) {
+        let csum = self.ext4_extent_block_get_csum(s, blk_data, inode_num, ino_gen);
+        self.set_checksum(csum);
+    }
+
+    #[allow(unused)]
+    pub fn ext4_extent_block_get_csum(&self, s: &Ext4Superblock, blk_data: &[u8], inode_num: u32,  ino_gen: u32) -> u32 {
+        let ino_index = inode_num;
+
+        let mut csum = 0;
+
+        let uuid = s.uuid;
+
+        csum = ext4_crc32c(EXT4_CRC32_INIT, &uuid, uuid.len() as u32);
+        csum = ext4_crc32c(csum, &ino_index.to_le_bytes(), 4);
+        csum = ext4_crc32c(csum, &ino_gen.to_le_bytes(), 4);
+
+        let mut data = [0u8; 0xffc];
+        unsafe {
+            core::ptr::copy_nonoverlapping(blk_data.as_ptr(), data.as_mut_ptr(), blk_data.len());
+        }
+
+        csum = ext4_crc32c(csum, &data[..], 0xffc);
+        csum
     }
 }
 

@@ -11,3 +11,9 @@ repository = "https://github.com/yuoo655/ext4_rs"
 [dependencies]
 bitflags = "2.2.1"
 log = "0.4"
+spin = {version = "0.9.8", optional = true}
+
+
+[features]
+default = ["blockcache"]
+blockcache = ["dep:spin"]

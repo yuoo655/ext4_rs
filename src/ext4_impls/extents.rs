@@ -43,10 +43,10 @@ impl Ext4 {
                 });
 
                 let next_block = search_path.path.last().unwrap().index.unwrap().leaf_lo;
-                let mut next_data = self
-                    .block_device
-                    .read_offset(next_block as usize * BLOCK_SIZE);
-                node = ExtentNode::load_from_data_mut(&mut next_data, false)?;
+
+                let mut next_level_block = self.read_offset(next_block as usize * BLOCK_SIZE);
+
+                node = ExtentNode::load_from_data_mut(&mut next_level_block.data, false)?;
                 depth -= 1;
                 search_path.depth += 1;
                 pblock_of_node = next_block as usize;
@@ -181,9 +181,9 @@ impl Ext4 {
 
     /// Get extent from the node at the given position.
     fn get_extent_from_node(&self, node: &ExtentPathNode, pos: usize) -> Option<Ext4Extent> {
-        let data = self
-            .block_device
-            .read_offset(node.pblock as usize * BLOCK_SIZE);
+        let block = self.read_offset(node.pblock as usize * BLOCK_SIZE);
+
+        let data = block.data;
         let extent_node = ExtentNode::load_from_data(&data, false).unwrap();
 
         extent_node.get_extent(pos)
@@ -264,14 +264,15 @@ impl Ext4 {
             left_ext.mark_unwritten();
         }
         let depth = search_path.depth as usize;
-
         let header = search_path.path[depth].header;
+
 
         if header.max_entries_count > 4 {
             let node = &search_path.path[depth];
             let block = node.pblock_of_node;
             let new_ex_offset = core::mem::size_of::<Ext4ExtentHeader>() + core::mem::size_of::<Ext4Extent>() * (node.position);
-            let mut ext4block = Block::load(self.block_device.clone(), block * BLOCK_SIZE);
+            let mut ext4block =  self.read_offset(block);
+            // Block::load(self.block_device.clone(), block * BLOCK_SIZE);
             let left_ext:&mut Ext4Extent = ext4block.read_offset_as_mut(new_ex_offset);
 
             let unwritten = left_ext.is_unwritten();
@@ -312,6 +313,7 @@ impl Ext4 {
             log::trace!("insert newex at pos {:x?} current entry_count {:x?} ex {:x?}", node.position + 1 , header.entries_count, new_extent);
             *inode_ref.inode.root_extent_mut_at(node.position + 1) = *new_extent;
             inode_ref.inode.root_extent_header_mut().entries_count += 1;
+
             return Ok(());
         }else{
             // insert at nonroot
@@ -319,8 +321,8 @@ impl Ext4 {
 
             // load block
             let node_block = node.pblock_of_node;
-            let mut ext4block =
-            Block::load(self.block_device.clone(), node_block * BLOCK_SIZE);
+            let mut ext4block = self.read_offset(node_block);
+            // Block::load(self.block_device.clone(), node_block * BLOCK_SIZE);
             let new_ex_offset = core::mem::size_of::<Ext4ExtentHeader>() + core::mem::size_of::<Ext4Extent>() * (node.position + 1);
 
             // insert new extent
@@ -367,8 +369,8 @@ impl Ext4 {
         let new_block = self.balloc_alloc_block(inode_ref, None)?;
 
         // load new block
-        let mut new_ext4block =
-            Block::load(self.block_device.clone(), new_block as usize * BLOCK_SIZE);
+        let mut new_ext4block = self.read_offset(new_block as usize);
+            // Block::load(self.block_device.clone(), new_block as usize * BLOCK_SIZE);
 
         // move top-level index/leaf into new block
         let data_to_copy = &inode_ref.inode.block;
@@ -399,12 +401,17 @@ impl Ext4 {
             root_first_index.first_block = root_first_extent_block;
         }
 
-
+        let new_header = Ext4ExtentHeader::load_from_u8(&new_ext4block.data);
+        // new_ext4block.extent_block_csum_set(self.block_device.clone(), &self.super_block, inode_ref.inode_num, inode_ref.inode.generation, &new_header);
         new_ext4block.sync_blk_to_disk(self.block_device.clone());
         self.write_back_inode(inode_ref);
 
 
         Ok(())
+    }
+
+    pub fn ext4_extent_block_csum_set(inode_ref: &Ext4InodeRef){
+
     }
     
 }
@@ -521,8 +528,8 @@ impl Ext4 {
                     i -= 1;
                     continue;
                 }
-                let ext4block =
-                    Block::load(self.block_device.clone(), node_pblock * BLOCK_SIZE);
+                let ext4block = self.read_offset(node_pblock);
+                    // Block::load(self.block_device.clone(), node_pblock * BLOCK_SIZE);
 
                 let header = search_path.path[i as usize].header;
                 let entries_count = header.entries_count;
@@ -648,7 +655,8 @@ impl Ext4 {
             // we are at root
             Block::load_inode_root_block(&inode_ref.inode.block)
         } else {
-            Block::load(self.block_device.clone(), node_disk_pos)
+            self.read_offset(path.path[depth as usize].pblock_of_node)
+            // Block::load(self.block_device.clone(), node_disk_pos)
         };
 
         // depth 2 (leaf nodes)
@@ -825,7 +833,9 @@ impl Ext4 {
                 + (header.entries_count as usize) * size_of::<Ext4ExtentIndex>();
 
             let node_disk_pos = path.path[i].pblock_of_node * BLOCK_SIZE;
-            let mut ext4block = Block::load(self.block_device.clone(), node_disk_pos);
+            let mut ext4block = self.read_offset(path.path[i].pblock_of_node);
+
+            // Block::load(self.block_device.clone(), node_disk_pos);
 
             let remaining_indexes: Vec<u8> =
                 ext4block.data[start_pos + size_of::<Ext4ExtentIndex>()..end_pos].to_vec();
@@ -954,7 +964,8 @@ impl Ext4 {
         if let Some(index) = path.index {
             let last_index_pos = header.entries_count as usize - 1;
             let node_disk_pos = path.pblock_of_node * BLOCK_SIZE;
-            let ext4block = Block::load(self.block_device.clone(), node_disk_pos);
+            let ext4block = self.read_offset( path.pblock_of_node);
+            // Block::load(self.block_device.clone(), node_disk_pos);
             let last_index: Ext4ExtentIndex =
                 ext4block.read_offset_as(size_of::<Ext4ExtentIndex>() * last_index_pos);
 

@@ -21,8 +21,14 @@ impl Ext4 {
         let inode_size = super_block.inode_size as u64;
         let group = (inode_num - 1) / inodes_per_group;
         let index = (inode_num - 1) % inodes_per_group;
-        let block_group =
-            Ext4BlockGroup::load_new(self.block_device.clone(), &super_block, group as usize);
+
+        let (block_id , offset) = Ext4BlockGroup::block_group_disk_pos(&super_block, group as usize);
+        let ext4block = self.read_offset(block_id * BLOCK_SIZE);
+        let block_group: Ext4BlockGroup = ext4block.read_offset_as(offset);
+
+
+        // let block_group =
+        //     Ext4BlockGroup::load_new(self.block_device.clone(), &super_block, group as usize);
         let inode_table_blk_num = block_group.get_inode_table_blk_num();
 
         inode_table_blk_num as usize * BLOCK_SIZE + index as usize * inode_size as usize
@@ -32,7 +38,8 @@ impl Ext4 {
     pub fn get_inode_ref(&self, inode_num: u32) -> Ext4InodeRef {
         let offset = self.inode_disk_pos(inode_num);
 
-        let mut ext4block = Block::load(self.block_device.clone(), offset);
+        let mut ext4block = self.read_offset(offset);
+        // Block::load(self.block_device.clone(), offset);
 
         let inode: &mut Ext4Inode = ext4block.read_as_mut();
 
@@ -50,18 +57,31 @@ impl Ext4 {
         inode_ref
             .inode
             .set_inode_checksum(&self.super_block, inode_ref.inode_num);
-        inode_ref
-            .inode
-            .sync_inode_to_disk(self.block_device.clone(), inode_pos);
+
+        let mut block: Block = self.read_offset(inode_pos);
+
+        let inode: &mut Ext4Inode = block.read_as_mut();
+
+        *inode = inode_ref.inode;
+
+        block.sync_blk_to_disk(self.block_device.clone());
+
+        self.flush_cache();
     }
 
     /// write back inode with checksum
     pub fn write_back_inode_without_csum(&self, inode_ref: &Ext4InodeRef) {
         let inode_pos = self.inode_disk_pos(inode_ref.inode_num);
+        let mut block: Block = self.read_offset(inode_pos);
 
-        inode_ref
-            .inode
-            .sync_inode_to_disk(self.block_device.clone(), inode_pos);
+        let inode: &mut Ext4Inode = block.read_as_mut();
+
+        *inode = inode_ref.inode;
+
+        block.sync_blk_to_disk(self.block_device.clone());
+
+
+        self.flush_cache();
     }
 
     /// Get physical block id of a logical block.
@@ -95,29 +115,34 @@ impl Ext4 {
         let index = (inode_ref.inode_num - 1) % inodes_per_group;
 
         // load block group
-        let mut block_group =
-            Ext4BlockGroup::load_new(self.block_device.clone(), &super_block, bgid as usize);
+        let (block_id , offset) = Ext4BlockGroup::block_group_disk_pos(&super_block, bgid as usize);
+        let ext4block = self.read_offset(block_id * BLOCK_SIZE);
+        let mut block_group: Ext4BlockGroup = ext4block.read_offset_as(offset);
 
-        let block_bitmap_block = block_group.get_block_bitmap_block(&super_block);
 
-        let mut block_bmap_raw_data = self
-            .block_device
-            .read_offset(block_bitmap_block as usize * BLOCK_SIZE);
-        let mut data: &mut Vec<u8> = &mut block_bmap_raw_data;
+        // let mut block_group =
+        //     Ext4BlockGroup::load_new(self.block_device.clone(), &super_block, bgid as usize);
+
+        let bmap_block_idx = block_group.get_block_bitmap_block(&super_block);
+
+
+        let mut bmap_block = self.read_offset(bmap_block_idx as usize * BLOCK_SIZE);
+
+        // let mut data: &mut Vec<u8> = &mut block_bmap_raw_data;
         let mut rel_blk_idx = 0;
 
-        ext4_bmap_bit_find_clr(data, index, 0x8000, &mut rel_blk_idx);
-        ext4_bmap_bit_set(data, rel_blk_idx);
+        ext4_bmap_bit_find_clr(&bmap_block.data, index, 0x8000, &mut rel_blk_idx);
+        ext4_bmap_bit_set(&mut bmap_block.data, rel_blk_idx);
 
-        block_group.set_block_group_balloc_bitmap_csum(&super_block, data);
-        self.block_device
-            .write_offset(block_bitmap_block as usize * BLOCK_SIZE, data);
+        block_group.set_block_group_balloc_bitmap_csum(&super_block, &bmap_block.data);
+
+        bmap_block.sync_blk_to_disk(self.block_device.clone());
 
         /* Update superblock free blocks count */
         let mut super_blk_free_blocks = super_block.free_blocks_count();
         super_blk_free_blocks -= 1;
         super_block.set_free_blocks_count(super_blk_free_blocks);
-        super_block.sync_to_disk_with_csum(self.block_device.clone());
+        self.super_block_sync_to_disk(&mut super_block);
 
         /* Update inode blocks (different block size!) count */
         let mut inode_blocks = inode_ref.inode.blocks_count();
@@ -129,8 +154,12 @@ impl Ext4 {
         let mut fb_cnt = block_group.get_free_blocks_count();
         fb_cnt -= 1;
         block_group.set_free_blocks_count(fb_cnt as u32);
-        block_group.sync_to_disk_with_csum(self.block_device.clone(), bgid as usize, &super_block);
 
+        self.block_group_sync_to_disk(&mut block_group, bgid as usize);
+        // block_group.sync_to_disk_with_csum(self.block_device.clone(), bgid as usize, &super_block);
+
+        self.flush_cache();
+        
         Ok(rel_blk_idx as Ext4Fsblk)
     }
 

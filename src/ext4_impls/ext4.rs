@@ -3,8 +3,14 @@ use crate::return_errno_with_message;
 use crate::utils::*;
 
 use crate::ext4_defs::*;
+
+#[cfg(feature = "blockcache")]
+use spin::Mutex;
+
 impl Ext4 {
+
     /// Opens and loads an Ext4 from the `block_device`.
+    #[cfg(not(feature = "blockcache"))]
     pub fn open(block_device: Arc<dyn BlockDevice>) -> Self {
         // Load the superblock
         let block = Block::load(block_device.clone(), SUPERBLOCK_OFFSET);
@@ -15,6 +21,21 @@ impl Ext4 {
             super_block,
         }
     }
+
+    /// Opens and loads an Ext4 from the `block_device`.
+    #[cfg(feature = "blockcache")]
+    pub fn open(block_device: Arc<dyn BlockDevice>, cache: Arc<Mutex<LruCache>>) -> Self {
+        // Load the superblock
+        let block = Block::load(block_device.clone(), SUPERBLOCK_OFFSET, cache.clone());
+        let super_block: Ext4Superblock = block.read_as();
+        drop(block);
+        Ext4 {
+            block_device,
+            super_block,
+            block_cache: cache
+        }
+    }
+
 
     // with dir result search path offset
     pub fn generic_open(
@@ -66,6 +87,7 @@ impl Ext4 {
 
                 let new_inode_ref = self.create(*parent, current_path, inode_mode)?;
 
+                self.flush_cache();
                 // Update parent to the new inode
                 *parent = new_inode_ref.inode_num;
 

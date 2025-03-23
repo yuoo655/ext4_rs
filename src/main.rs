@@ -99,11 +99,16 @@ impl BlockDevice for Disk {
     }
 }
 
+#[cfg(feature = "blockcache")]
+use spin::Mutex;
+
 fn main() {
     log::set_logger(&SimpleLogger).unwrap();
     log::set_max_level(LevelFilter::Trace);
     let disk = Arc::new(Disk {});
-    let ext4 = Ext4::open(disk);
+
+    let lrucache = Arc::new(Mutex::new(LruCache::new(0x1000)));
+    let ext4 = Ext4::open(disk, lrucache);
 
     // file read
     let path = "test_files/0.txt";
@@ -134,6 +139,11 @@ fn main() {
         let r = ext4.dir_mk(&path);
         assert!(r.is_ok(), "dir make error {:?}", r.err());
     }
+
+    // let parent = ext4.get_inode_ref(2);
+    // assert!(parent.inode.is_dir());
+
+
     let path = "dir1/dir2/dir3/dir4/dir5/dir6";
     log::info!("mkdir making {:?}", path);
     let r = ext4.dir_mk(&path);
@@ -141,18 +151,10 @@ fn main() {
 
     // dir ls
     let entries = ext4.dir_get_entries(ROOT_INODE);
-    log::info!("dir ls root");
+    log::info!("-------dir ls root-------");
     for entry in entries {
         log::info!("{:?}", entry.get_name());
     }
-
-    // file remove
-    let path = "test_files/file_to_remove";
-    let r = ext4.file_remove(&path);
-
-    // dir remove
-    let path = "dir_to_remove";
-    let r = ext4.dir_remove(ROOT_INODE, &path);
 
     // file create/write
     log::info!("----create file----");
@@ -160,7 +162,8 @@ fn main() {
     let inode_perm = (InodePerm::S_IREAD | InodePerm::S_IWRITE).bits();
     let inode_ref = ext4.create(ROOT_INODE, "4G.txt", inode_mode | inode_perm).unwrap();
     log::info!("----write file----");
-    const WRITE_SIZE: usize = (1024 * 1024 * 1024 * 4);
+    // const WRITE_SIZE: usize = (0x1000 * 100);
+    const WRITE_SIZE: usize = (1024 * 1024 * 12);
     let write_buf = vec![0x41 as u8; WRITE_SIZE];
     let r = ext4.write_at(inode_ref.inode_num, 0, &write_buf);
 
