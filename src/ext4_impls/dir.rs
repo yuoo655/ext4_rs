@@ -21,7 +21,9 @@ impl Ext4 {
     ) -> Result<usize> {
         // load parent inode
         let parent = self.get_inode_ref(parent_inode);
-        assert!(parent.inode.is_dir());
+        if !parent.inode.is_dir() {
+            return_errno_with_message!(Errno::ENOTDIR, "dir_find_entry on non-directory inode");
+        }
 
         // start from the first logical block
         let mut iblock = 0;
@@ -109,7 +111,11 @@ impl Ext4 {
 
         // load inode
         let inode_ref = self.get_inode_ref(inode);
-        assert!(inode_ref.inode.is_dir());
+        // We return an empty Vec rather than panicking when the caller
+        // hands us a non-directory inode
+        if !inode_ref.inode.is_dir() {
+            return entries;
+        }
 
         // calculate total blocks
         let inode_size = inode_ref.inode.size();
@@ -371,7 +377,10 @@ impl Ext4 {
     pub fn dir_has_entry(&self, dir_inode: u32) -> bool {
         // load parent inode
         let parent = self.get_inode_ref(dir_inode);
-        assert!(parent.inode.is_dir());
+        // Non-directories have no entries
+        if !parent.inode.is_dir() {
+            return false;
+        }
 
         // start from the first logical block
         let mut iblock = 0;
