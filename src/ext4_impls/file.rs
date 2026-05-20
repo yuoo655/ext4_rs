@@ -544,8 +544,12 @@ impl Ext4 {
     pub fn truncate_inode(&self, inode_ref: &mut Ext4InodeRef, new_size: u64) -> Result<usize> {
         let old_size = inode_ref.inode.size();
 
-        assert!(old_size > new_size);
+        // grow-via-truncate is unsupported, callers should use write_at instead
+        if new_size > old_size {
+            return_errno_with_message!(Errno::EINVAL, "truncate_inode cannot grow a file");
+        }
 
+        // no-op
         if old_size == new_size {
             return Ok(EOK);
         }
