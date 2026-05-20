@@ -15,8 +15,7 @@ impl Ext4 {
                 continue;
             }
 
-            let mut bg =
-                Ext4BlockGroup::load_new(&self.block_device, &super_block, bgid as usize);
+            let mut bg = Ext4BlockGroup::load_new(&self.block_device, &super_block, bgid as usize);
 
             let mut free_inodes = bg.get_free_inodes_count();
 
@@ -84,8 +83,7 @@ impl Ext4 {
         let bgid = self.get_bgid_of_inode(index);
 
         let mut super_block = self.super_block;
-        let mut bg =
-            Ext4BlockGroup::load_new(&self.block_device, &super_block, bgid as usize);
+        let mut bg = Ext4BlockGroup::load_new(&self.block_device, &super_block, bgid as usize);
 
         // Load inode bitmap block
         let inode_bitmap_block = bg.get_inode_bitmap_block(&self.super_block);

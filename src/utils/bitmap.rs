@@ -53,13 +53,13 @@ pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u3
 
     let mut byte_idx = (i >> 3) as usize;
     let mut bit_pos = i;
-    
+
     while bcnt >= 8 {
         // 检查边界条件
         if byte_idx >= bmap.len() {
             return false;
         }
-        
+
         if bmap[byte_idx] != 0xFF {
             for j in 0..8 {
                 let bit_idx = bit_pos + j;
@@ -79,12 +79,12 @@ pub fn ext4_bmap_bit_find_clr(bmap: &[u8], sbit: u32, ebit: u32, bit_id: &mut u3
         if bit_pos >= ebit {
             return false;
         }
-        
+
         if ext4_bmap_is_bit_clr(bmap, bit_pos) {
             *bit_id = bit_pos;
             return true;
         }
-        
+
         bit_pos += 1;
         bcnt -= 1;
     }

@@ -22,11 +22,9 @@ impl Block {
 
     /// Load the block from inode block
     pub fn load_inode_root_block(data: &[u32; 15]) -> Self {
-        let data_bytes: &[u8; 60] = unsafe {
-            core::mem::transmute(data)
-        };
+        let data_bytes: &[u8; 60] = unsafe { core::mem::transmute(data) };
         Block {
-            disk_offset: 0, 
+            disk_offset: 0,
             data: data_bytes.to_vec(),
         }
     }
@@ -75,8 +73,8 @@ impl Block {
     }
 }
 
-impl Block{
-    pub fn sync_blk_to_disk(&self, block_device: &Arc<dyn BlockDevice>){
+impl Block {
+    pub fn sync_blk_to_disk(&self, block_device: &Arc<dyn BlockDevice>) {
         block_device.write_offset(self.disk_offset, &self.data);
     }
 }

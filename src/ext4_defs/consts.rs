@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-pub const BLOCK_SIZE: usize = 0x1000;                // 4KB
+pub const BLOCK_SIZE: usize = 0x1000; // 4KB
 pub const SECTORS_PER_BLOCK: usize = BLOCK_SIZE / 512;
 
 pub type Ext4Lblk = u32;
@@ -9,10 +9,10 @@ pub type Ext4Fsblk = u64;
 pub const EOK: usize = 0;
 
 /// Inode
-pub const ROOT_INODE: u32 = 2;                      // Root directory inode
-pub const JOURNAL_INODE: u32 = 8;                   // Journal file inode
-pub const UNDEL_DIR_INODE: u32 = 6;                 // Undelete directory inode
-pub const LOST_AND_FOUND_INODE: u32 = 11;           // lost+found directory inode
+pub const ROOT_INODE: u32 = 2; // Root directory inode
+pub const JOURNAL_INODE: u32 = 8; // Journal file inode
+pub const UNDEL_DIR_INODE: u32 = 6; // Undelete directory inode
+pub const LOST_AND_FOUND_INODE: u32 = 11; // lost+found directory inode
 pub const EXT4_INODE_MODE_FILE: usize = 0x8000;
 pub const EXT4_INODE_MODE_TYPE_MASK: u16 = 0xF000;
 pub const EXT4_INODE_MODE_PERM_MASK: u16 = 0x0FFF;

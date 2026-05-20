@@ -267,7 +267,8 @@ impl ExtentNode {
             if data.len() != BLOCK_SIZE {
                 return_errno_with_message!(Errno::EINVAL, "Invalid data length for root node");
             }
-            let mut header = *Ext4ExtentHeader::load_from_u8_mut(&mut data[..size_of::<Ext4ExtentHeader>()]);
+            let mut header =
+                *Ext4ExtentHeader::load_from_u8_mut(&mut data[..size_of::<Ext4ExtentHeader>()]);
             Ok(ExtentNode {
                 header,
                 data: NodeData::Internal(data.to_vec()),
@@ -311,13 +312,13 @@ impl ExtentNode {
                 }
                 let idx = 3 + (l - 1) * 3;
                 let ext = Ext4Extent::load_from_u32(&root_data[idx..]);
-    
+
                 Some((ext, l - 1))
             }
             NodeData::Internal(internal_data) => {
                 let mut l = 1;
                 let mut r = (self.header.entries_count - 1) as usize;
-    
+
                 while l <= r {
                     let m = l + (r - l) / 2;
                     let offset = size_of::<Ext4ExtentHeader>() + m * size_of::<Ext4Extent>();
@@ -326,7 +327,7 @@ impl ExtentNode {
                     if lblock < ext.first_block {
                         r = m - 1;
                     } else {
-                        l = m + 1;  // Otherwise, move to the right half
+                        l = m + 1; // Otherwise, move to the right half
                     }
                 }
                 let offset = size_of::<Ext4ExtentHeader>() + (l - 1) * size_of::<Ext4Extent>();
@@ -494,7 +495,7 @@ impl Ext4Extent {
     }
 
     /// Set the actual length of the extent.
-    pub fn set_actual_len(&mut self, len: u16){
+    pub fn set_actual_len(&mut self, len: u16) {
         self.block_count = len;
     }
 
@@ -588,12 +589,18 @@ mod tests {
         // Test invalid data length for root node
         let invalid_data: [u8; 10] = [0; 10];
         let result = ExtentNode::load_from_data(&invalid_data, true);
-        assert!(result.is_err(), "Expected error for invalid root node data length");
+        assert!(
+            result.is_err(),
+            "Expected error for invalid root node data length"
+        );
 
         // Test invalid data length for internal node
         let invalid_data: [u8; BLOCK_SIZE - 1] = [0; BLOCK_SIZE - 1];
         let result = ExtentNode::load_from_data(&invalid_data, false);
-        assert!(result.is_err(), "Expected error for invalid internal node data length");
+        assert!(
+            result.is_err(),
+            "Expected error for invalid internal node data length"
+        );
     }
 
     #[test]
@@ -737,13 +744,17 @@ mod tests {
         };
 
         // Get the index at position 0
-        let index = node.get_index(0).expect("Failed to get index at position 0");
+        let index = node
+            .get_index(0)
+            .expect("Failed to get index at position 0");
         assert_eq!(index.first_block, 0);
         assert_eq!(index.leaf_lo, 1);
         assert_eq!(index.leaf_hi, 2);
 
         // Get the index at position 1
-        let index = node.get_index(1).expect("Failed to get index at position 1");
+        let index = node
+            .get_index(1)
+            .expect("Failed to get index at position 1");
         assert_eq!(index.first_block, 10);
         assert_eq!(index.leaf_lo, 11);
         assert_eq!(index.leaf_hi, 12);
@@ -784,12 +795,16 @@ mod tests {
         };
 
         // Get the extent at position 0
-        let extent = node.get_extent(0).expect("Failed to get extent at position 0");
+        let extent = node
+            .get_extent(0)
+            .expect("Failed to get extent at position 0");
         assert_eq!(extent.first_block, 0);
         assert_eq!(extent.block_count, 10);
 
         // Get the extent at position 1
-        let extent = node.get_extent(1).expect("Failed to get extent at position 1");
+        let extent = node
+            .get_extent(1)
+            .expect("Failed to get extent at position 1");
         assert_eq!(extent.first_block, 10);
         assert_eq!(extent.block_count, 10);
     }

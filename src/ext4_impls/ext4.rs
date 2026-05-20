@@ -24,7 +24,8 @@ impl Ext4 {
                 });
             }
             // block group描述符
-            let block_group = Ext4BlockGroup::load_new(&self.block_device, &self.super_block, bgid as usize);
+            let block_group =
+                Ext4BlockGroup::load_new(&self.block_device, &self.super_block, bgid as usize);
             // block bitmap
             let blk_bmp = block_group.get_block_bitmap_block(&self.super_block);
             zones.push(SystemZone {
@@ -41,7 +42,8 @@ impl Ext4 {
             });
             // inode table
             let ino_tbl = block_group.get_inode_table_blk_num() as u64;
-            let itb_per_group = ((inodes_per_group as u64 * inode_size + block_size - 1) / block_size) as u64;
+            let itb_per_group =
+                ((inodes_per_group as u64 * inode_size + block_size - 1) / block_size) as u64;
             zones.push(SystemZone {
                 group: bgid,
                 start_blk: ino_tbl,
@@ -57,7 +59,7 @@ impl Ext4 {
         let super_block: Ext4Superblock = block.read_as();
 
         // drop(block);
-        
+
         let ext4_tmp = Ext4 {
             block_device,
             super_block,

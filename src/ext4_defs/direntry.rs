@@ -55,10 +55,10 @@ pub struct Ext4DirEntryTail {
     pub checksum: u32, // crc32c(uuid+inum+dirblock)
 }
 
-pub struct Ext4DirSearchResult{
-    pub dentry: Ext4DirEntry, 
-    pub pblock_id: usize, // disk block id
-    pub offset: usize, // offset in block
+pub struct Ext4DirSearchResult {
+    pub dentry: Ext4DirEntry,
+    pub pblock_id: usize,   // disk block id
+    pub offset: usize,      // offset in block
     pub prev_offset: usize, //prev direntry offset
 }
 
@@ -115,7 +115,6 @@ impl<T> TryFrom<&[T]> for Ext4DirEntry {
 
 /// Directory entry implementation.
 impl Ext4DirEntry {
-
     /// Check if the directory entry is unused.
     pub fn unused(&self) -> bool {
         self.inode == 0
@@ -128,8 +127,8 @@ impl Ext4DirEntry {
 
     /// Check name
     pub fn compare_name(&self, name: &str) -> bool {
-        if self.name_len as usize == name.len(){
-            return &self.name[..name.len()] == name.as_bytes()
+        if self.name_len as usize == name.len() {
+            return &self.name[..name.len()] == name.as_bytes();
         }
         false
     }
@@ -161,7 +160,7 @@ impl Ext4DirEntry {
     pub fn actual_len(&self) -> usize {
         size_of::<Ext4FakeDirEntry>() + self.name_len as usize
     }
-    
+
     /// Calculate the aligned length of a directory entry (including padding bytes)
     pub fn align_len(&self) -> usize {
         let mut len = self.actual_len();
@@ -169,21 +168,19 @@ impl Ext4DirEntry {
         len
     }
 
-    pub fn write_entry(&mut self, entry_len: u16, inode: u32, name: &str, de_type:DirEntryType) {
+    pub fn write_entry(&mut self, entry_len: u16, inode: u32, name: &str, de_type: DirEntryType) {
         self.inode = inode;
         self.entry_len = entry_len;
         self.name_len = name.len() as u8;
         self.inner.inode_type = de_type.bits();
         self.name[..name.len()].copy_from_slice(name.as_bytes());
     }
-
 }
 
 /// The size of a block without its tail
 const BLOCK_DATA_SIZE: usize = BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>();
 
 impl Ext4DirEntry {
-
     /// Get the checksum of the directory entry.
     #[allow(unused)]
     pub fn ext4_dir_get_csum(&self, s: &Ext4Superblock, blk_data: &[u8], ino_gen: u32) -> u32 {
@@ -227,7 +224,7 @@ impl Ext4DirEntry {
     }
 }
 
-impl Ext4DirEntryTail{
+impl Ext4DirEntryTail {
     pub fn new() -> Self {
         Self {
             reserved_zero1: 0,
@@ -250,10 +247,10 @@ impl Ext4DirEntryTail{
 
     pub fn copy_to_slice(&self, array: &mut [u8]) {
         unsafe {
-        let offset = BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>();
-        let de_ptr = self as *const Ext4DirEntryTail as *const u8;
-        let array_ptr = array as *mut [u8] as *mut u8;
-        let count = core::mem::size_of::<Ext4DirEntryTail>();
+            let offset = BLOCK_SIZE - core::mem::size_of::<Ext4DirEntryTail>();
+            let de_ptr = self as *const Ext4DirEntryTail as *const u8;
+            let array_ptr = array as *mut [u8] as *mut u8;
+            let count = core::mem::size_of::<Ext4DirEntryTail>();
             core::ptr::copy_nonoverlapping(de_ptr, array_ptr.add(offset), count);
         }
     }
