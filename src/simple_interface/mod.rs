@@ -8,15 +8,13 @@ use crate::return_errno_with_message;
 use crate::utils::path_check;
 
 // export some definitions
-pub use crate::ext4_defs::Ext4;
-pub use crate::ext4_defs::BLOCK_SIZE;
 pub use crate::ext4_defs::BlockDevice;
+pub use crate::ext4_defs::Ext4;
 pub use crate::ext4_defs::InodeFileType;
-
+pub use crate::ext4_defs::BLOCK_SIZE;
 
 /// simple interface for ext4
 impl Ext4 {
-
     /// Parse the file access flags (such as "r", "w", "a", etc.) and convert them to system constants.
     ///
     /// This method parses common file access flags into their corresponding bitwise constants defined in `libc`.
@@ -49,11 +47,7 @@ impl Ext4 {
     ///
     /// # Returns
     /// * `Result<u32>` - Returns the inode number of the opened file if successful.
-    pub fn ext4_file_open(
-        &self,
-        path: &str,
-        flags: &str,
-    ) -> Result<u32> {
+    pub fn ext4_file_open(&self, path: &str, flags: &str) -> Result<u32> {
         let mut parent_inode_num = ROOT_INODE;
         let filetype = InodeFileType::S_IFREG;
 
@@ -70,15 +64,15 @@ impl Ext4 {
     }
 
     /// Create a new directory at the specified path.
-    /// 
+    ///
     /// Checks if the directory already exists by searching from the root directory (`ROOT_INODE`).
     /// If the directory does not exist, it creates the directory under the root directory and returns its inode number.
-    /// 
+    ///
     /// # Arguments
     /// * `path` - The path where the directory will be created.
-    /// 
+    ///
     /// # Returns
-    /// * `Result<u32>` - The inode number of the newly created directory if successful, 
+    /// * `Result<u32>` - The inode number of the newly created directory if successful,
     ///   or an error (`Errno::EEXIST`) if the directory already exists.
     pub fn ext4_dir_mk(&self, path: &str) -> Result<u32> {
         let mut search_result = Ext4DirSearchResult::new(Ext4DirEntry::default());
@@ -92,7 +86,6 @@ impl Ext4 {
         self.generic_open(path, &mut parent_inode_num, true, filetype.bits(), &mut 0)
     }
 
-
     /// Open a directory at the specified path and return the corresponding inode number.
     ///
     /// Opens a directory by searching for the given path starting from the root directory (`ROOT_INODE`).
@@ -102,10 +95,7 @@ impl Ext4 {
     ///
     /// # Returns
     /// * `Result<u32>` - Returns the inode number of the opened directory if successful.
-    pub fn ext4_dir_open(
-        &self,
-        path: &str,
-    ) -> Result<u32> {
+    pub fn ext4_dir_open(&self, path: &str) -> Result<u32> {
         let mut parent_inode_num = ROOT_INODE;
         let filetype = InodeFileType::S_IFDIR;
         self.generic_open(path, &mut parent_inode_num, false, filetype.bits(), &mut 0)
@@ -135,12 +125,7 @@ impl Ext4 {
     ///
     /// # Returns
     /// * `Result<Vec<u8>>` - The data read from the file.
-    pub fn ext4_file_read(
-        &self,
-        ino: u64,
-        size: u32,
-        offset: i64,
-    ) -> Result<Vec<u8>> {
+    pub fn ext4_file_read(&self, ino: u64, size: u32, offset: i64) -> Result<Vec<u8>> {
         let mut data = vec![0u8; size as usize];
         let read_size = self.read_at(ino as u32, offset as usize, &mut data)?;
         let r = data[..read_size].to_vec();
@@ -158,14 +143,8 @@ impl Ext4 {
     ///
     /// # Returns
     /// * `Result<usize>` - The number of bytes written to the file.
-    pub fn ext4_file_write(
-        &self,
-        ino: u64,
-        offset: i64,
-        data: &[u8],
-    ) -> Result<usize> {
+    pub fn ext4_file_write(&self, ino: u64, offset: i64, data: &[u8]) -> Result<usize> {
         let write_size = self.write_at(ino as u32, offset as usize, data)?;
         Ok(write_size)
     }
-
 }

@@ -16,11 +16,10 @@ pub(crate) use alloc::sync::Weak;
 pub(crate) use alloc::vec;
 pub(crate) use alloc::vec::Vec;
 pub(crate) use core::any::Any;
+pub(crate) use core::cmp::min;
 pub(crate) use core::ffi::CStr;
 pub(crate) use core::fmt::Debug;
 pub(crate) use core::mem::size_of;
-pub(crate) use core::cmp::min;
-
 
 pub(crate) use bitflags::bitflags;
 pub(crate) use log::{debug, info, trace, warn};

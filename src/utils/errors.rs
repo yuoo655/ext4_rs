@@ -1,5 +1,3 @@
-
-
 /// Ext4Error number.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,7 +32,7 @@ pub enum Errno {
     EMLINK = 31,       /* Too many links */
     EPIPE = 32,        /* Broken pipe */
     ENAMETOOLONG = 36, /* File name too long */
-    ENOTSUP   = 95,   /* Not supported */
+    ENOTSUP = 95,      /* Not supported */
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

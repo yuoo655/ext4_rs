@@ -605,7 +605,7 @@ mod tests {
 
         assert!(!inode.check_access(uid, gid, access_mode as u16, umask));
     }
-    
+
     #[test]
     fn test_file_type() {
         let inode = Ext4Inode {
@@ -637,6 +637,10 @@ mod tests {
         inode.set_file_type(InodeFileType::S_IFREG);
         assert_eq!(inode.mode, InodeFileType::S_IFREG.bits()); // Regular file with rwx permissions
         inode.set_file_perm(InodePerm::S_IREAD | InodePerm::S_IWRITE | InodePerm::S_IEXEC);
-        assert_eq!(inode.mode, InodeFileType::S_IFREG.bits() | (InodePerm::S_IREAD | InodePerm::S_IWRITE | InodePerm::S_IEXEC).bits()); // Regular file with rwx permissions
+        assert_eq!(
+            inode.mode,
+            InodeFileType::S_IFREG.bits()
+                | (InodePerm::S_IREAD | InodePerm::S_IWRITE | InodePerm::S_IEXEC).bits()
+        ); // Regular file with rwx permissions
     }
 }

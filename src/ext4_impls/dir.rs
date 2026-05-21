@@ -21,7 +21,9 @@ impl Ext4 {
     ) -> Result<usize> {
         // load parent inode
         let parent = self.get_inode_ref(parent_inode);
-        assert!(parent.inode.is_dir());
+        if !parent.inode.is_dir() {
+            return_errno_with_message!(Errno::ENOTDIR, "dir_find_entry on non-directory inode");
+        }
 
         // start from the first logical block
         let mut iblock = 0;
@@ -44,8 +46,7 @@ impl Ext4 {
                 fblock = path.pblock;
 
                 // load physical block
-                let mut ext4block =
-                    Block::load(&self.block_device, fblock as usize * BLOCK_SIZE);
+                let mut ext4block = Block::load(&self.block_device, fblock as usize * BLOCK_SIZE);
 
                 // find entry in block
                 let r = self.dir_find_in_block(&ext4block, name, result);
@@ -110,7 +111,11 @@ impl Ext4 {
 
         // load inode
         let inode_ref = self.get_inode_ref(inode);
-        assert!(inode_ref.inode.is_dir());
+        // We return an empty Vec rather than panicking when the caller
+        // hands us a non-directory inode
+        if !inode_ref.inode.is_dir() {
+            return entries;
+        }
 
         // calculate total blocks
         let inode_size = inode_ref.inode.size();
@@ -132,8 +137,7 @@ impl Ext4 {
                 let fblock = path.pblock;
 
                 // load physical block
-                let ext4block =
-                    Block::load(&self.block_device, fblock as usize * BLOCK_SIZE);
+                let ext4block = Block::load(&self.block_device, fblock as usize * BLOCK_SIZE);
                 let mut offset = 0;
 
                 // iterate all entries in a block
@@ -190,8 +194,7 @@ impl Ext4 {
             let pblock = self.get_pblock_idx(parent, iblock as u32)?;
 
             // load physical block
-            let mut ext4block =
-                Block::load(&self.block_device, pblock as usize * BLOCK_SIZE);
+            let mut ext4block = Block::load(&self.block_device, pblock as usize * BLOCK_SIZE);
 
             let result = self.try_insert_to_existing_block(&mut ext4block, name, child.inode_num);
 
@@ -211,8 +214,7 @@ impl Ext4 {
         let new_block = self.append_inode_pblk(parent)?;
 
         // load new block
-        let mut new_ext4block =
-            Block::load(&self.block_device, new_block as usize * BLOCK_SIZE);
+        let mut new_ext4block = Block::load(&self.block_device, new_block as usize * BLOCK_SIZE);
 
         // write new entry to the new block
         // must succeed, as we just allocated the block
@@ -354,8 +356,11 @@ impl Ext4 {
                 tmp_de = ext4block.read_offset_as(offset);
                 de_len = tmp_de.entry_len();
             }
-            
-            assert!(de_len as usize + offset == pos, "Invalid predecessor calculation");
+
+            assert!(
+                de_len as usize + offset == pos,
+                "Invalid predecessor calculation"
+            );
 
             // Add removed entry length to predecessor's length
             let del_len = result.dentry.entry_len();
@@ -372,7 +377,10 @@ impl Ext4 {
     pub fn dir_has_entry(&self, dir_inode: u32) -> bool {
         // load parent inode
         let parent = self.get_inode_ref(dir_inode);
-        assert!(parent.inode.is_dir());
+        // Non-directories have no entries
+        if !parent.inode.is_dir() {
+            return false;
+        }
 
         // start from the first logical block
         let mut iblock = 0;
@@ -395,8 +403,7 @@ impl Ext4 {
                 fblock = path.pblock;
 
                 // load physical block
-                let ext4block =
-                    Block::load(&self.block_device, fblock as usize * BLOCK_SIZE);
+                let ext4block = Block::load(&self.block_device, fblock as usize * BLOCK_SIZE);
 
                 // start from the first entry
                 let mut offset = 0;
@@ -428,10 +435,10 @@ impl Ext4 {
         let mut parent_inode_ref = self.get_inode_ref(parent);
         let mut child_inode_ref = self.get_inode_ref(search_result.dentry.inode);
 
-        if self.dir_has_entry(child_inode_ref.inode_num){
+        if self.dir_has_entry(child_inode_ref.inode_num) {
             return_errno_with_message!(Errno::ENOTSUP, "rm dir with children not supported")
         }
-        
+
         self.truncate_inode(&mut child_inode_ref, 0)?;
 
         self.unlink(&mut parent_inode_ref, &mut child_inode_ref, path)?;
