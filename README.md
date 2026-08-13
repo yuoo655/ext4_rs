@@ -1,3 +1,5 @@
+
+
 # An os independent rust ext4 file system
 
 [![Crates.io Version](https://img.shields.io/crates/v/ext4_rs)](https://crates.io/crates/ext4_rs)
@@ -16,6 +18,7 @@ mkfs.ext4 1.46.5 (30-Dec-2021)
 For small images, the newer mkfs.ext4 uses a 512-byte block size. Use **mkfs.ext4 -b 4096** to set a 4096-byte block size.
 
 ## run example
+> Note: The example script requires `sudo` privileges to mount the ext4 disk image.
 ```sh
 git clone https://github.com/yuoo655/ext4_rs.git
 sh run.sh
